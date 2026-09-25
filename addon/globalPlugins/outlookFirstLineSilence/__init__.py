@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.21
+# Outlook First Line Silence 1.0.22
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
@@ -839,15 +839,19 @@ def _isSplittableControl(field):
 
 
 def _lineSegments(lineInfo):
-    """Return character ranges that place each link/control on its own line."""
+    """Return (start, end, lineText) ranges that place each link/control on its own line.
+
+    The offsets index lineText, the line's text as its fields report it.
+    """
     try:
         fields = lineInfo.getTextWithFields()
     except Exception:
         log.debugWarning("Outlook First Line Silence links: could not read line fields", exc_info=True)
         return None
-    offset, stack, edges = 0, [], set()
+    offset, stack, edges, chunks = 0, [], set(), []
     for field in fields:
         if isinstance(field, str):
+            chunks.append(field)
             offset += len(field)
             continue
         command = getattr(field, "command", None)
@@ -860,15 +864,15 @@ def _lineSegments(lineInfo):
     if offset <= 0:
         log.debug("Outlook First Line Silence links: blank line")
         return None
-    whole = [(0, offset)]
+    text = "".join(chunks)
+    whole = [(0, offset, text)]
     if not edges:
         log.debug("Outlook First Line Silence links: %d-character line has no control fields", offset)
         return whole
     edges.update((0, offset))
     bounds = sorted(edge for edge in edges if 0 <= edge <= offset)
-    text = lineInfo.text or ""
     segments = [
-        (start, end)
+        (start, end, text)
         for start, end in zip(bounds, bounds[1:])
         if end > start and text[start:end].strip()
     ]
@@ -877,7 +881,7 @@ def _lineSegments(lineInfo):
     return result
 
 
-def _segmentInfo(lineInfo, start, end):
+def _segmentInfoByCharacters(lineInfo, start, end):
     segment = lineInfo.copy()
     segment.collapse()
     if start and segment.move(textInfos.UNIT_CHARACTER, start) != start:
@@ -888,6 +892,55 @@ def _segmentInfo(lineInfo, start, end):
         return None
     segment.setEndPoint(finish, "endToStart")
     return segment
+
+
+# An inline picture has no text, so a text offset next to one could be either side
+# of it. Step past at most this many to reach the segment's first real character.
+_TEXTLESS_UNIT_LIMIT = 8
+
+
+def _textPoint(lineInfo, lineText, offset):
+    """A collapsed TextInfo *offset* characters into lineText."""
+    if offset <= 0 or offset >= len(lineText):
+        point = lineInfo.copy()
+        point.collapse(end=offset > 0)
+        return point
+    # The browse mode proxy does not pass Word's own text through to this
+    # conversion, so ask the Word TextInfo it wraps, and reuse the line text
+    # already fetched rather than reading the whole line again.
+    inner = getattr(lineInfo, "innerTextInfo", None)
+    source = (lineInfo if inner is None else inner).copy()
+    source._getTextForCodepointMovement = lambda: lineText
+    point = source.moveToCodepointOffset(offset)
+    # Land on the link's first character rather than on a picture just before it,
+    # or Enter would activate the picture.
+    for _step in range(_TEXTLESS_UNIT_LIMIT):
+        unit = point.copy()
+        if not unit.move(textInfos.UNIT_CHARACTER, 1, endPoint="end") or unit._getTextForCodepointMovement():
+            break
+        point.move(textInfos.UNIT_CHARACTER, 1)
+    return point if inner is None else lineInfo.__class__(lineInfo.obj, point)
+
+
+def _segmentInfo(lineInfo, start, end, lineText=None):
+    segment = _segmentInfoByCharacters(lineInfo, start, end)
+    if lineText is None or (segment is not None and segment.text == lineText[start:end]):
+        return segment
+    # Word counts an inline picture (such as a sender's avatar), a list bullet or a
+    # table end-of-row mark differently from the line's text, so moving by characters
+    # can stop short of a link. The caret is then left just outside the link, where
+    # Enter cannot activate it. Map the text offsets onto the document instead.
+    try:
+        mapped = _textPoint(lineInfo, lineText, start)
+        mapped.setEndPoint(_textPoint(lineInfo, lineText, end), "endToStart")
+    except (ValueError, RuntimeError):
+        log.debugWarning(
+            "Outlook First Line Silence links: could not map segment %d-%d" % (start, end),
+            exc_info=True,
+        )
+        return segment
+    log.debug("Outlook First Line Silence links: realigned segment %d-%d to the line text", start, end)
+    return mapped
 
 
 def _caretOffsetInLine(lineInfo, caretInfo):
@@ -902,14 +955,14 @@ def _walkSegment(treeInterceptor, gesture, direction):
     line.expand(textInfos.UNIT_LINE)
     segments = _lineSegments(line)
     target = None
-    currentTarget = None
+    current = None
     if segments:
         here = _caretOffsetInLine(line, caret)
         index = 0
-        for position, (start, _end) in enumerate(segments):
+        for position, (start, _end, _text) in enumerate(segments):
             if start <= here:
                 index = position
-        currentTarget = _segmentInfo(line, *segments[index])
+        current = (line, segments[index])
         wanted = index + direction
         if 0 <= wanted < len(segments):
             target = _segmentInfo(line, *segments[wanted])
@@ -922,6 +975,7 @@ def _walkSegment(treeInterceptor, gesture, direction):
             # including an inline link. Re-announce the current logical segment
             # instead, so the first Up Arrow after a quiet message opening still
             # preserves the separate text and link lines.
+            currentTarget = None if current is None else _segmentInfo(current[0], *current[1])
             if currentTarget is None:
                 log.debug("Outlook First Line Silence links: no adjacent Word line")
                 return False
@@ -1535,7 +1589,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             inputCore.decide_executeGesture.register(_onGesture)
             _gestureHandlerRegistered = True
             log.info(
-                "Outlook First Line Silence 1.0.21 loaded; links on their own line: %s"
+                "Outlook First Line Silence 1.0.22 loaded; links on their own line: %s"
                 % getLinksOnOwnLine()
             )
         except Exception:

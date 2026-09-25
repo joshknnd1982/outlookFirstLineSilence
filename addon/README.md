@@ -11,7 +11,7 @@ The add-on also preserves Outlook Send/Receive progress announcements while the 
 
 ## Install
 
-1. Download the current `outlookFirstLineSilence-1.0.21.nvda-addon` package.
+1. Download the current `outlookFirstLineSilence-1.0.22.nvda-addon` package.
 2. Open the downloaded file, approve installation in NVDA, and restart NVDA when prompted.
 
 ## What it changes
@@ -37,6 +37,8 @@ Version 1.0.17 announces when focus enters an editable Outlook message body. It 
 Version 1.0.18 prevents repeated freezes if Outlook's Word RPC server becomes unavailable during link-line navigation. The failed Up or Down Arrow gesture and subsequent line movement in that document use native arrow keys without making another blocking COM request. Opening another message creates a new document and restores link-line navigation automatically.
 
 Version 1.0.21 plays a sound when Outlook's list of suggested recipients appears while you address a message, and a different sound when the list goes away. The enter sound plays when the list opens after you type or use the Up, Down, Page Up, or Page Down keys in an address field. The exit sound plays when you press Escape, Enter, or Tab, when there are no more matches, or when focus leaves the address field. The sounds are `OutlookAutocompleteEnterSound.wav` and `OutlookAutocompleteExitSound.wav` in the add-on's `sounds` folder and play through NVDA's selected output device. They apply to address fields in message windows and to To, Cc, and Bcc fields elsewhere in Outlook, not to the search box.
+
+Version 1.0.22 fixes Enter not opening a link in a Word-rendered Outlook message when **Links are on their own line** is enabled. On a line that contains a picture, such as the sender's avatar in a GitHub notification, Down Arrow left the cursor one character before the link, so Enter did nothing, the link was read with a stray space before it, and its last character was cut off. Link lines are now positioned by the line's text, so the cursor lands on the link itself and Enter opens it.
 
 ## Options and customization
 

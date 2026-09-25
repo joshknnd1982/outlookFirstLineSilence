@@ -8,7 +8,7 @@ announces, "You are now in the message body, type a message." Normal Outlook
 navigation and speech you ask for are left alone.
 
 * Author: Dennis Long; based on Mute Browse Mode 3.6.57 by Josh Kennedy
-* Version: 1.0.21
+* Version: 1.0.22
 * Compatibility: NVDA 2026.1.0 or later (tested with 2026.1.1)
 * Download: grab the `.nvda-addon` file from the
   [releases page](https://github.com/joshknnd1982/outlookFirstLineSilence/releases)
@@ -57,7 +57,7 @@ Requires Python 3. From the repository root:
 python build.py
 ```
 
-This produces `outlookFirstLineSilence-1.0.21.nvda-addon` in the repository
+This produces `outlookFirstLineSilence-1.0.22.nvda-addon` in the repository
 root.
 
 ## Repository layout
