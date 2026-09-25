@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.22
+# Outlook First Line Silence 1.0.23
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
@@ -10,6 +10,8 @@ import ctypes
 import ctypes.wintypes
 import os
 from contextlib import contextmanager
+
+from comtypes import COMError
 
 import addonHandler
 import api
@@ -1017,8 +1019,8 @@ def _walkSegment(treeInterceptor, gesture, direction):
     return True
 
 
-def _isRecoverableWordRpcError(error):
-    """Return whether *error* means Outlook's Word RPC server disconnected."""
+def _hresultOf(error):
+    """Return the signed HRESULT carried by a COM error, or None."""
     hresult = getattr(error, "hresult", None)
     if hresult is None:
         args = getattr(error, "args", ())
@@ -1027,10 +1029,15 @@ def _isRecoverableWordRpcError(error):
     try:
         hresult = int(hresult)
     except (TypeError, ValueError):
-        return False
+        return None
     if hresult > 0x7FFFFFFF:
         hresult -= 0x100000000
-    return hresult in _RECOVERABLE_WORD_RPC_HRESULTS
+    return hresult
+
+
+def _isRecoverableWordRpcError(error):
+    """Return whether *error* means Outlook's Word RPC server disconnected."""
+    return _hresultOf(error) in _RECOVERABLE_WORD_RPC_HRESULTS
 
 
 def _sendNativeLineGesture(gesture):
@@ -1072,6 +1079,84 @@ def _makeMoveByLineWrapper(original, direction):
     script_moveByLine.__doc__ = getattr(original, "__doc__", None)
     script_moveByLine.__dict__.update(getattr(original, "__dict__", {}))
     return script_moveByLine
+
+
+# Message status in Outlook's message list.
+# NVDA's Outlook support reads a message's status (unread, replied or forwarded, has
+# attachment, importance) from Outlook's object model. It gets that object once per run
+# of Outlook and then keeps it as ``nativeOm`` on its Outlook app module, so if the object
+# stops answering, every message is announced without its status until NVDA restarts.
+# The log from the first NVDA start after installing 1.0.22 shows exactly that: Outlook
+# answered "Unknown name" to NVDA's question about the selected message for the whole
+# session. So when focus lands on a message, ask NVDA's question first. If the answer
+# means the object itself is unusable, rather than that Outlook is busy or nothing is
+# selected, forget it, and NVDA gets Outlook's object model again before it builds the
+# announcement.
+_UNUSABLE_OBJECT_MODEL_HRESULTS = _RECOVERABLE_WORD_RPC_HRESULTS | frozenset((
+    -2147352570,  # 0x80020006: DISP_E_UNKNOWNNAME
+    -2147220995,  # 0x800401FD: CO_E_OBJNOTCONNECTED
+))
+# Getting the object model again starts NVDA's helper process and holds NVDA for about a
+# second, so do it at most this often, and stop after this many attempts in a row that
+# still leave an unusable object model.
+_OBJECT_MODEL_RETRY_INTERVAL = 30.0
+_OBJECT_MODEL_RETRY_LIMIT = 3
+_OBJECT_MODEL_RETRIES_ATTRIBUTE = "_outlookFirstLineSilenceObjectModelRetries"
+
+
+def _isOutlookMessageRow(obj):
+    """True for a row of classic Outlook's message list, as NVDA's Outlook support builds it."""
+    if _appNameOf(obj) != "outlook":
+        return False
+    return any(
+        cls.__name__ == "UIAGridRow" and cls.__module__.endswith("appModules.outlook")
+        for cls in type(obj).__mro__
+    )
+
+
+def _objectModelError(nativeOm):
+    """The error that makes *nativeOm* unusable for NVDA's message status, or None."""
+    try:
+        nativeOm.activeExplorer().selection.item(1).unread
+    except COMError as error:
+        # A busy Outlook rejects the call and an empty selection has no item 1; NVDA's
+        # own question can still succeed a moment later, so neither counts.
+        return error if _hresultOf(error) in _UNUSABLE_OBJECT_MODEL_HRESULTS else None
+    except Exception:
+        # No explorer window, or an item without a read state, such as a note.
+        return None
+    return None
+
+
+def _renewOutlookObjectModel(obj):
+    """Before NVDA announces a message, drop an Outlook object model that no longer answers."""
+    if not _isOutlookMessageRow(obj):
+        return
+    appModule = obj.appModule
+    nativeOm = vars(appModule).get("nativeOm")
+    if nativeOm is None:
+        # NVDA has not got it yet, or could not; NVDA handles both itself.
+        return
+    retries, lastRetry = getattr(appModule, _OBJECT_MODEL_RETRIES_ATTRIBUTE, (0, None))
+    error = _objectModelError(nativeOm)
+    if error is None:
+        if retries:
+            setattr(appModule, _OBJECT_MODEL_RETRIES_ATTRIBUTE, (0, lastRetry))
+        return
+    now = time.monotonic()
+    if retries >= _OBJECT_MODEL_RETRY_LIMIT or (
+        lastRetry is not None and now - lastRetry < _OBJECT_MODEL_RETRY_INTERVAL
+    ):
+        return
+    setattr(appModule, _OBJECT_MODEL_RETRIES_ATTRIBUTE, (retries + 1, now))
+    # nativeOm is a getter that stores what it gets on the app module itself, so removing
+    # the stored object makes NVDA's next read get Outlook's object model again.
+    vars(appModule).pop("nativeOm", None)
+    log.warning(
+        "Outlook First Line Silence: Outlook's object model stopped answering (%r), so messages "
+        "were announced without their status; NVDA gets it again (attempt %d of %d)"
+        % (error, retries + 1, _OBJECT_MODEL_RETRY_LIMIT)
+    )
 
 
 class OutlookFirstLineSilenceSettingsPanel(settingsDialogs.SettingsPanel):
@@ -1589,7 +1674,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             inputCore.decide_executeGesture.register(_onGesture)
             _gestureHandlerRegistered = True
             log.info(
-                "Outlook First Line Silence 1.0.22 loaded; links on their own line: %s"
+                "Outlook First Line Silence 1.0.23 loaded; links on their own line: %s"
                 % getLinksOnOwnLine()
             )
         except Exception:
@@ -1638,6 +1723,12 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             _suggestionsFocusChanged(obj)
         except Exception:
             log.debugWarning("Outlook First Line Silence: could not update suggestion state", exc_info=True)
+        # Global plugins handle focus before NVDA's Outlook support announces the message,
+        # so a renewed object model is already in place for that announcement.
+        try:
+            _renewOutlookObjectModel(obj)
+        except Exception:
+            log.debugWarning("Outlook First Line Silence: could not check Outlook's object model", exc_info=True)
         try:
             isMessageDocument = (
                 getattr(obj, "role", None) == getattr(controlTypes.Role, "DOCUMENT", None)

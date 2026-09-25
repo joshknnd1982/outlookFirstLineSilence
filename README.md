@@ -8,7 +8,7 @@ announces, "You are now in the message body, type a message." Normal Outlook
 navigation and speech you ask for are left alone.
 
 * Author: Dennis Long; based on Mute Browse Mode 3.6.57 by Josh Kennedy
-* Version: 1.0.22
+* Version: 1.0.23
 * Compatibility: NVDA 2026.1.0 or later (tested with 2026.1.1)
 * Download: grab the `.nvda-addon` file from the
   [releases page](https://github.com/joshknnd1982/outlookFirstLineSilence/releases)
@@ -31,6 +31,9 @@ It also:
 * Speaks an Outlook Save/Keep-draft prompt once per dialog.
 * Plays a sound when Outlook's list of suggested recipients appears while you
   address a message, and a different sound when the list goes away.
+* Reconnects NVDA to Outlook when that connection stops answering, so
+  messages in the message list keep their status (unread, replied or
+  forwarded, has attachment) without restarting NVDA.
 * Recognizes classic Outlook, new Outlook (and Outlook-owned WebView
   content), and the Windows Mail/Calendar-era hosts.
 
@@ -57,7 +60,7 @@ Requires Python 3. From the repository root:
 python build.py
 ```
 
-This produces `outlookFirstLineSilence-1.0.22.nvda-addon` in the repository
+This produces `outlookFirstLineSilence-1.0.23.nvda-addon` in the repository
 root.
 
 ## Repository layout
