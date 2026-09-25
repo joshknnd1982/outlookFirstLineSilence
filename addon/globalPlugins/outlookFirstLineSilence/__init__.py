@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.25
+# Outlook First Line Silence 1.0.26
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
 
+import builtins
 import time
 import re
+import sys
 import ctypes
 import ctypes.wintypes
 import os
@@ -39,6 +41,7 @@ from speech.priorities import SpeechPriority
 from logHandler import log
 
 from . import messageHtml
+from . import messageRows
 from . import updater
 
 try:
@@ -1317,14 +1320,19 @@ _OBJECT_MODEL_RETRY_LIMIT = 3
 _OBJECT_MODEL_RETRIES_ATTRIBUTE = "_outlookFirstLineSilenceObjectModelRetries"
 
 
+def _outlookRowClass(obj):
+    """NVDA's class for a row of classic Outlook's message list, when *obj* is one, or None."""
+    if _appNameOf(obj) != "outlook":
+        return None
+    for cls in type(obj).__mro__:
+        if cls.__name__ == "UIAGridRow" and cls.__module__.endswith("appModules.outlook"):
+            return cls
+    return None
+
+
 def _isOutlookMessageRow(obj):
     """True for a row of classic Outlook's message list, as NVDA's Outlook support builds it."""
-    if _appNameOf(obj) != "outlook":
-        return False
-    return any(
-        cls.__name__ == "UIAGridRow" and cls.__module__.endswith("appModules.outlook")
-        for cls in type(obj).__mro__
-    )
+    return _outlookRowClass(obj) is not None
 
 
 def _objectModelError(nativeOm):
@@ -1370,6 +1378,46 @@ def _renewOutlookObjectModel(obj):
         "were announced without their status; NVDA gets it again (attempt %d of %d)"
         % (error, retries + 1, _OBJECT_MODEL_RETRY_LIMIT)
     )
+
+
+# Deleting a message.
+# As Outlook deletes a message, or moves it out of the folder, it empties the message's
+# row before the focus moves to the next one, and reports that the row's name changed.
+# NVDA names the emptied row only by the status Outlook gives for the selected message,
+# and says that new name: "unread", then the next message, "unread From ..." (issue #3).
+# The tester's log shows exactly that after each of five presses of Delete. A name with
+# no column text says nothing about any message, so it is not said.
+_STATUS_WORDS = ("unread", "has attachment", "meeting request")
+
+
+def _messageStatusLabels(rowClass):
+    """The status words NVDA's Outlook support can put in a row's name, as NVDA says them."""
+    # NVDA's own translations; this module's _ is the add-on's.
+    translate = getattr(builtins, "_", None)
+    if not callable(translate):
+        translate = str
+    labels = {translate(word) for word in _STATUS_WORDS}
+    for stateName in ("EXPANDED", "COLLAPSED"):
+        state = getattr(controlTypes.State, stateName, None)
+        if state is not None:
+            labels.add(state.displayString)
+    module = sys.modules.get(rowClass.__module__)
+    for table in ("executedVerbLabels", "importanceLabels"):
+        labels.update(getattr(module, table, {}).values())
+    return labels
+
+
+def _isEmptiedMessageRow(obj):
+    """True for the focused message row once Outlook has emptied it to remove the message."""
+    rowClass = _outlookRowClass(obj)
+    # NVDA says a new name only for the focus.
+    if rowClass is None or obj is not api.getFocusObject():
+        return False
+    name = obj.name
+    if not messageRows.isStatusOnly(name, _messageStatusLabels(rowClass)):
+        return False
+    log.debug("Outlook First Line Silence: the focused message row is now named only %r; not said" % name)
+    return True
 
 
 class OutlookFirstLineSilenceSettingsPanel(settingsDialogs.SettingsPanel):
@@ -1589,8 +1637,8 @@ def _outlookDraftPromptText(obj):
 
 
 @contextmanager
-def _muteFocusSpeech():
-    """Let NVDA update focus caches without speaking the incomplete Save prompt."""
+def _muteSpeech():
+    """Let NVDA handle an event and note what it would say, without saying it."""
     speechModule = getattr(speech, "speech", None)
     public = getattr(speech, "speak", None)
     private = getattr(speechModule, "speak", None) if speechModule else None
@@ -1612,6 +1660,10 @@ def _muteFocusSpeech():
 def _handleOutlookDraftPrompt(obj, nextHandler):
     """Mute Browse Mode 3.6.57's one-prompt-per-dialog focus handling."""
     global _savePromptKey, _savePromptUntil
+    if not _isInOutlookWindow(obj):
+        # The scan walks up to 14 parents, so keep it out of every other program's
+        # focus changes, such as Notepad's Save As dialog (issue #3).
+        return False
     dialog, text = _outlookDraftPromptText(obj)
     if dialog is None:
         return False
@@ -1629,7 +1681,7 @@ def _handleOutlookDraftPrompt(obj, nextHandler):
         return True
     _savePromptKey = key
     _savePromptUntil = now + _DRAFT_PROMPT_DUPLICATE_WINDOW
-    with _muteFocusSpeech():
+    with _muteSpeech():
         nextHandler()
     with _ownSpeech():
         speech.speak([text, _("{button} button").format(button=buttonName)])
@@ -1897,7 +1949,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             _gestureHandlerRegistered = True
             updater.start()
             log.info(
-                "Outlook First Line Silence 1.0.25 loaded; links on their own line: %s"
+                "Outlook First Line Silence 1.0.26 loaded; links on their own line: %s"
                 % getLinksOnOwnLine()
             )
         except Exception:
@@ -1955,6 +2007,19 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
     def event_UIA_elementSelected(self, obj, nextHandler, *args, **kwargs):
         _trackSuggestionSelection(obj)
         nextHandler()
+
+    def event_nameChange(self, obj, nextHandler):
+        try:
+            emptied = _isEmptiedMessageRow(obj)
+        except Exception:
+            emptied = False
+            log.debugWarning("Outlook First Line Silence: could not check a message row's new name", exc_info=True)
+        if not emptied:
+            nextHandler()
+            return
+        # Braille and NVDA's notes of the row still follow the change.
+        with _muteSpeech():
+            nextHandler()
 
     def event_gainFocus(self, obj, nextHandler):
         """Restore the complete text of Outlook's Save/Keep-draft prompt."""

@@ -11,7 +11,7 @@ The add-on also preserves Outlook Send/Receive progress announcements while the 
 
 ## Install
 
-1. Download the current `outlookFirstLineSilence-1.0.25.nvda-addon` package.
+1. Download the current `outlookFirstLineSilence-1.0.26.nvda-addon` package.
 2. Open the downloaded file, approve installation in NVDA, and restart NVDA when prompted.
 
 ## What it changes
@@ -52,6 +52,8 @@ It also reformats a message on request. Press **NVDA+Shift+V** while reading a m
 
 Both features read the message through Outlook’s object model. If your antivirus is off or out of date, Outlook may ask whether to allow a program to access its data; that is this add-on asking for the message.
 
+Version 1.0.26 stops “unread” being said twice when you delete a message. As Outlook deletes a message, or moves it out of the folder, it empties the message’s row in the message list before it moves to the next message. NVDA said what was left of the row, just its status, such as “unread”, and then the next message: “unread”, “unread From …”. The add-on now keeps that leftover status quiet, so you hear only the next message. The add-on also no longer looks for Outlook’s Save/Keep-draft prompt in other programs. It did that on every focus change, including in Notepad’s Save As dialog; now it does it only in Outlook.
+
 ## Options and customization
 
 Open NVDA's Settings, select **Outlook First Line Silence**, and enable **Links are on their own line**. It affects Outlook message reading only. With the option enabled, Up and Down Arrow stop on each link/control separately instead of reading it as part of the surrounding line. It does not change browser layout or other applications.
@@ -69,6 +71,8 @@ Changing these values changes how long automatic opening speech may be blocked a
 
 - `manifest.ini` — NVDA add-on metadata and compatibility requirements.
 - `globalPlugins/outlookFirstLineSilence/__init__.py` — the global plugin implementation.
+- `globalPlugins/outlookFirstLineSilence/messageHtml.py` — reads a message's own HTML for story links and the reformatted page.
+- `globalPlugins/outlookFirstLineSilence/messageRows.py` — tells a deleted message's leftover row from a message.
 - `globalPlugins/outlookFirstLineSilence/updater.py` — the GitHub update check.
 - `globalPlugins/outlookFirstLineSilence/sounds/` — the recipient-suggestion enter and exit sounds.
 - `doc/en/readme.html` — the in-NVDA add-on documentation.

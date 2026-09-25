@@ -8,7 +8,7 @@ announces, "You are now in the message body, type a message." Normal Outlook
 navigation and speech you ask for are left alone.
 
 * Author: Dennis Long; based on Mute Browse Mode 3.6.57 by Josh Kennedy
-* Version: 1.0.25
+* Version: 1.0.26
 * Compatibility: NVDA 2026.1.0 or later (tested with 2026.1.1)
 * Download: grab the `.nvda-addon` file from the
   [releases page](https://github.com/joshknnd1982/outlookFirstLineSilence/releases)
@@ -34,6 +34,9 @@ It also:
 * Reconnects NVDA to Outlook when that connection stops answering, so
   messages in the message list keep their status (unread, replied or
   forwarded, has attachment) without restarting NVDA.
+* Keeps quiet the status Outlook leaves behind in a message's row as it
+  deletes the message, so Delete says only the next message, not "unread"
+  and then "unread From ...".
 * Recognizes classic Outlook, new Outlook (and Outlook-owned WebView
   content), and the Windows Mail/Calendar-era hosts.
 
@@ -74,9 +77,9 @@ Requires Python 3. From the repository root:
 python build.py
 ```
 
-This produces `outlookFirstLineSilence-1.0.25.nvda-addon` and its `.sha256`
+This produces `outlookFirstLineSilence-1.0.26.nvda-addon` and its `.sha256`
 checksum file in the repository root. Upload both to the GitHub release: the
-update check reads the release's tag, such as `v1.0.25`, and checks the
+update check reads the release's tag, such as `v1.0.26`, and checks the
 download against the checksum.
 
 ## Repository layout
@@ -90,6 +93,8 @@ addon/
       __init__.py                   The global plugin
       messageHtml.py                Reads a message's own HTML: story links
                                     and the reformatted page
+      messageRows.py                Tells a deleted message's leftover row
+                                    from a message
       updater.py                    The GitHub update check, shared by all of
                                     joshknnd1982's add-ons; keep it identical
       sounds/                       Recipient-suggestion enter and exit sounds
