@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.23
+# Outlook First Line Silence 1.0.24
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
@@ -35,6 +35,8 @@ import wx
 from gui import guiHelper, settingsDialogs
 from speech.priorities import SpeechPriority
 from logHandler import log
+
+from . import updater
 
 try:
     addonHandler.initTranslation()
@@ -1166,9 +1168,11 @@ class OutlookFirstLineSilenceSettingsPanel(settingsDialogs.SettingsPanel):
         helper = guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
         self.linksOnOwnLine = helper.addItem(wx.CheckBox(self, label=_("Links are on their &own line")))
         self.linksOnOwnLine.SetValue(getLinksOnOwnLine())
+        self.updates = updater.SettingsControls(self, helper)
 
     def onSave(self):
         setLinksOnOwnLine(self.linksOnOwnLine.GetValue())
+        self.updates.save()
 
 
 def _outlookIsCurrent(obj=None):
@@ -1673,8 +1677,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
             inputCore.decide_executeGesture.register(_onGesture)
             _gestureHandlerRegistered = True
+            updater.start()
             log.info(
-                "Outlook First Line Silence 1.0.23 loaded; links on their own line: %s"
+                "Outlook First Line Silence 1.0.24 loaded; links on their own line: %s"
                 % getLinksOnOwnLine()
             )
         except Exception:
@@ -1686,6 +1691,14 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
                 _gestureHandlerRegistered = False
             _unpatchAll()
             raise
+
+    @scriptHandler.script(
+        # Translators: Description of a command, shown in the Input Gestures dialog.
+        description=_("Checks for Outlook First Line Silence updates"),
+        category=_("Outlook First Line Silence"),
+    )
+    def script_checkForUpdates(self, gesture):
+        updater.checkForUpdates()
 
     def event_foreground(self, obj, nextHandler):
         # The message-window title is spoken inside the foreground event chain, before
@@ -1768,6 +1781,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             )
 
     def terminate(self):
+        updater.stop()
         _resetSuggestions()
         global _gestureHandlerRegistered
         _closeGate()

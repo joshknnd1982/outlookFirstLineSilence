@@ -11,7 +11,7 @@ The add-on also preserves Outlook Send/Receive progress announcements while the 
 
 ## Install
 
-1. Download the current `outlookFirstLineSilence-1.0.23.nvda-addon` package.
+1. Download the current `outlookFirstLineSilence-1.0.24.nvda-addon` package.
 2. Open the downloaded file, approve installation in NVDA, and restart NVDA when prompted.
 
 ## What it changes
@@ -42,6 +42,10 @@ Version 1.0.22 fixes Enter not opening a link in a Word-rendered Outlook message
 
 Version 1.0.23 fixes messages in Outlook's message list being announced without their status (unread, replied or forwarded, has attachment, importance) until NVDA was restarted. NVDA gets that status from Outlook's object model and keeps its connection to it for as long as Outlook runs. When that connection stopped answering, as it did for a tester right after installing 1.0.22 (Outlook replied “Unknown name” to every question), every message lost its status for the rest of the session. Now, when you move to a message, the add-on first asks Outlook what NVDA is about to ask. If the connection itself is broken, rather than Outlook being busy or nothing being selected, NVDA connects to Outlook again before the message is announced. Reconnecting starts NVDA's helper process and can pause NVDA for about a second, so it happens at most once every 30 seconds and stops after three attempts in a row that do not help.
 
+Version 1.0.24 checks for updates. Once a day, a little after NVDA starts, the add-on asks its GitHub repository, [github.com/joshknnd1982/outlookFirstLineSilence](https://github.com/joshknnd1982/outlookFirstLineSilence), whether a newer version has been released, and says nothing unless there is one. When there is, a dialog shows what's new in a box you can read line by line, and offers to download and install it. The download must match the release's SHA-256 checksum. Then NVDA asks you to confirm the installation and offers to restart. Your settings are kept.
+
+To check yourself, open the NVDA menu, choose **Tools**, then **Check for add-on updates**, and choose **Outlook First Line Silence...**. Or press **Check for updates now** in the add-on's settings: NVDA menu, Preferences, Settings, **Outlook First Line Silence**. You can also assign a gesture to **Checks for Outlook First Line Silence updates** in NVDA's Input Gestures dialog, under **Outlook First Line Silence**. To stop the daily check, clear **Check for Outlook First Line Silence updates automatically** in the same settings panel.
+
 ## Options and customization
 
 Open NVDA's Settings, select **Outlook First Line Silence**, and enable **Links are on their own line**. It affects Outlook message reading only. With the option enabled, Up and Down Arrow stop on each link/control separately instead of reading it as part of the surrounding line. It does not change browser layout or other applications.
@@ -59,6 +63,7 @@ Changing these values changes how long automatic opening speech may be blocked a
 
 - `manifest.ini` — NVDA add-on metadata and compatibility requirements.
 - `globalPlugins/outlookFirstLineSilence/__init__.py` — the global plugin implementation.
+- `globalPlugins/outlookFirstLineSilence/updater.py` — the GitHub update check.
 - `globalPlugins/outlookFirstLineSilence/sounds/` — the recipient-suggestion enter and exit sounds.
 - `doc/en/readme.html` — the in-NVDA add-on documentation.
 
