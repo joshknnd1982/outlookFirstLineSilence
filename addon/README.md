@@ -11,7 +11,7 @@ The add-on also preserves Outlook Send/Receive progress announcements while the 
 
 ## Install
 
-1. Download the current `outlookFirstLineSilence-1.0.24.nvda-addon` package.
+1. Download the current `outlookFirstLineSilence-1.0.25.nvda-addon` package.
 2. Open the downloaded file, approve installation in NVDA, and restart NVDA when prompted.
 
 ## What it changes
@@ -45,6 +45,12 @@ Version 1.0.23 fixes messages in Outlook's message list being announced without 
 Version 1.0.24 checks for updates. Once a day, a little after NVDA starts, the add-on asks its GitHub repository, [github.com/joshknnd1982/outlookFirstLineSilence](https://github.com/joshknnd1982/outlookFirstLineSilence), whether a newer version has been released, and says nothing unless there is one. When there is, a dialog shows what's new in a box you can read line by line, and offers to download and install it. The download must match the release's SHA-256 checksum. Then NVDA asks you to confirm the installation and offers to restart. Your settings are kept.
 
 To check yourself, open the NVDA menu, choose **Tools**, then **Check for add-on updates**, and choose **Outlook First Line Silence...**. Or press **Check for updates now** in the add-on's settings: NVDA menu, Preferences, Settings, **Outlook First Line Silence**. You can also assign a gesture to **Checks for Outlook First Line Silence updates** in NVDA's Input Gestures dialog, under **Outlook First Line Silence**. To stop the daily check, clear **Check for Outlook First Line Silence updates automatically** in the same settings panel.
+
+Version 1.0.25 opens stories that Outlook shows without their links. Some newsletters put one link around a whole story: its picture, headline, summary and “Read more”. Outlook can’t show a link like that, so the story was plain text, and Enter on its headline did nothing. Now Enter or Space on text in a classic Outlook message finds that text in the message’s own HTML and opens the link the sender put around it in your web browser. Links Outlook does show open as before.
+
+It also reformats a message on request. Press **NVDA+Shift+V** while reading a message, or with a message selected in the message list, and the add-on shows it as a plain web page in your browser: its subject as a heading, then its headings, paragraphs, lists and links, without layout tables, pictures or the sender’s styles. Every line of a story is a link to it. Nothing on the page is loaded from the internet, so opening it doesn’t tell the sender you read the message. The page is a temporary file that is replaced each time and removed when NVDA exits. You can change the gesture in NVDA’s Input Gestures dialog, under Outlook First Line Silence.
+
+Both features read the message through Outlook’s object model. If your antivirus is off or out of date, Outlook may ask whether to allow a program to access its data; that is this add-on asking for the message.
 
 ## Options and customization
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.24
+# Outlook First Line Silence 1.0.25
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
@@ -9,7 +9,9 @@ import re
 import ctypes
 import ctypes.wintypes
 import os
+import tempfile
 from contextlib import contextmanager
+from urllib.parse import urlsplit
 
 from comtypes import COMError
 
@@ -36,6 +38,7 @@ from gui import guiHelper, settingsDialogs
 from speech.priorities import SpeechPriority
 from logHandler import log
 
+from . import messageHtml
 from . import updater
 
 try:
@@ -508,6 +511,8 @@ def _user32():
         library.IsWindowVisible.restype = ctypes.c_int
         library.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.wintypes.RECT)]
         library.GetWindowRect.restype = ctypes.c_int
+        library.AllowSetForegroundWindow.argtypes = [ctypes.wintypes.DWORD]
+        library.AllowSetForegroundWindow.restype = ctypes.c_int
         _privateUser32 = library
     return _privateUser32
 
@@ -1081,6 +1086,212 @@ def _makeMoveByLineWrapper(original, direction):
     script_moveByLine.__doc__ = getattr(original, "__doc__", None)
     script_moveByLine.__dict__.update(getattr(original, "__dict__", {}))
     return script_moveByLine
+
+
+# Stories whose link Outlook leaves out.
+# Newsletters often put one link around a whole story: its picture, headline, summary
+# and "Read more". Word, which shows classic Outlook's messages, cannot link a block like
+# that, so the story is plain text, usually after an empty link, and Enter on the
+# headline only clicks the text (issue #2: "doAction failed", "Clicking with mouse").
+# The message's HTML still has the link, so when Enter or Space lands on text that is
+# not a link, find that text in the HTML and open the link the sender put around it.
+_OL_FORMAT_HTML = 2
+_ASFW_ANY = 0xFFFFFFFF
+
+
+def _shouldFindStoryLinks(treeInterceptor):
+    """Whether this is a classic Outlook message shown by Word, in browse mode."""
+    if not isinstance(treeInterceptor, browseMode.BrowseModeDocumentTreeInterceptor):
+        return False
+    if getattr(treeInterceptor, "passThrough", False):
+        return False
+    if getattr(treeInterceptor, "VBufHandle", None):
+        # A web view keeps the message's own links.
+        return False
+    root = _documentRoot(treeInterceptor)
+    return (
+        root is not None
+        and _appNameOf(root) == "outlook"
+        and _windowClassOf(root) in _OUTLOOK_BODY_WINDOW_CLASSES
+    )
+
+
+def _isInLink(caret):
+    character = caret.copy()
+    character.expand(textInfos.UNIT_CHARACTER)
+    for field in character.getTextWithFields():
+        if (
+            isinstance(field, textInfos.FieldCommand)
+            and field.command == "controlStart"
+            and field.field.get("role") == controlTypes.Role.LINK
+        ):
+            return True
+    return False
+
+
+def _shownOutlookItem(root):
+    """The Outlook item shown in the window of *root*, an object in classic Outlook, or None."""
+    nativeOm = getattr(root.appModule, "nativeOm", None)
+    if not nativeOm:
+        return None
+    try:
+        title = (winUser.getWindowText(_rootWindowOf(root)) or "").strip()
+    except Exception:
+        title = ""
+    inspectors = nativeOm.inspectors
+    for index in range(1, inspectors.count + 1):
+        inspector = inspectors.item(index)
+        if title and (inspector.caption or "").strip() == title:
+            return inspector.currentItem
+    if _isOutlookMessageInspector(root):
+        inspector = nativeOm.activeInspector()
+        return inspector.currentItem if inspector else None
+    # Not a message window, so the main window: its message list and the reading pane
+    # show the one selected message. If this finds another message, the text at the
+    # caret will not be found in it, so no link is opened.
+    explorer = nativeOm.activeExplorer()
+    if not explorer:
+        return None
+    selection = explorer.selection
+    if selection.count != 1:
+        return None
+    return selection.item(1)
+
+
+def _storyLinkAt(treeInterceptor, obj=None, info=None):
+    """The address of the link the sender put around the text at the caret, or None."""
+    if obj is not None or not _shouldFindStoryLinks(treeInterceptor):
+        return None
+    caret = (info or treeInterceptor.makeTextInfo(textInfos.POSITION_CARET)).copy()
+    caret.collapse()
+    if _isInLink(caret):
+        # NVDA opens real links itself.
+        return None
+    line = caret.copy()
+    line.expand(textInfos.UNIT_LINE)
+    rest = caret.copy()
+    rest.setEndPoint(line, "endToEnd")
+    textFromCaret = rest.text or ""
+    if not textFromCaret.strip():
+        return None
+    item = _shownOutlookItem(_documentRoot(treeInterceptor))
+    if item is None or item.bodyFormat != _OL_FORMAT_HTML:
+        return None
+    before = treeInterceptor.makeTextInfo(textInfos.POSITION_ALL)
+    before.setEndPoint(caret, "endToStart")
+    return messageHtml.linkAt(item.HTMLBody, before.text or "", textFromCaret)
+
+
+def _openInBrowser(target):
+    try:
+        # Outlook, not NVDA, is in front. Let the browser come forward, as it does
+        # when Outlook opens a link.
+        _user32().AllowSetForegroundWindow(_ASFW_ANY)
+    except Exception:
+        log.debugWarning("Outlook First Line Silence: could not let the browser come forward", exc_info=True)
+    os.startfile(target)
+
+
+def _openStoryLink(url):
+    # Only the site goes in the log: the rest of a newsletter link can identify the reader.
+    try:
+        site = urlsplit(url).netloc
+    except ValueError:
+        site = ""
+    log.debug("Outlook First Line Silence: opening the link around the text at the caret (%s)", site)
+    _openInBrowser(url)
+
+
+# Reformatting a message on request.
+# NVDA+Shift+V shows the message as a plain web page in the default browser: headings,
+# paragraphs, lists and links, without layout tables, pictures or the sender's styles,
+# with every line of a story a link to it. The page is a file in the add-on's own
+# temporary folder, replaced each time and removed when NVDA exits.
+_REFORMAT_FOLDER = os.path.join(tempfile.gettempdir(), "outlookFirstLineSilence")
+
+
+def _removeReformattedMessages():
+    try:
+        names = os.listdir(_REFORMAT_FOLDER)
+    except OSError:
+        return
+    for name in names:
+        if name.endswith(".html"):
+            try:
+                os.remove(os.path.join(_REFORMAT_FOLDER, name))
+            except OSError:
+                pass
+
+
+def _outlookItemToReformat():
+    """The message being read or selected in classic Outlook, or None."""
+    focus = api.getFocusObject()
+    if _appNameOf(focus) != "outlook":
+        return None
+    return _shownOutlookItem(focus)
+
+
+def _itemText(item, name):
+    try:
+        return getattr(item, name) or ""
+    except (COMError, AttributeError):
+        return ""
+
+
+def _reformatMessage():
+    try:
+        item = _outlookItemToReformat()
+        html = None if item is None else item.HTMLBody
+    except Exception:
+        log.debugWarning("Outlook First Line Silence: could not get the message to reformat", exc_info=True)
+        html = None
+    if not html:
+        # Translators: Reported when the reformat command is used outside a classic Outlook message.
+        ui.message(_("No message to reformat. Open or select a message in classic Outlook."))
+        return
+    title = _itemText(item, "subject")
+    sender = _itemText(item, "senderName")
+    page, blocks, links = messageHtml.reformat(
+        html,
+        # Translators: The title of a reformatted message that has no subject.
+        title or _("Message"),
+        # Translators: The sender line of a reformatted message.
+        _("From: {sender}").format(sender=sender) if sender else None,
+    )
+    log.debug("Outlook First Line Silence: reformatted a message into %d blocks and %d links" % (blocks, links))
+    _removeReformattedMessages()
+    path = os.path.join(_REFORMAT_FOLDER, "message-%d.html" % int(time.time() * 1000))
+    try:
+        os.makedirs(_REFORMAT_FOLDER, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as pageFile:
+            pageFile.write(page)
+        _openInBrowser(path)
+    except OSError:
+        log.error("Outlook First Line Silence: could not show the reformatted message", exc_info=True)
+        # Translators: Reported when the reformatted message could not be opened in the web browser.
+        ui.message(_("Could not open the reformatted message in your web browser."))
+        return
+    # Translators: Reported while the reformatted message opens in the web browser.
+    ui.message(_("Opening the reformatted message in your web browser"))
+
+
+def _makeActivatePositionWrapper(original):
+    def _activatePosition(self, obj=None, info=None):
+        try:
+            url = _storyLinkAt(self, obj=obj, info=info)
+        except Exception:
+            url = None
+            log.debugWarning("Outlook First Line Silence: could not look for a story link", exc_info=True)
+        if url and messageHtml.isOpenable(url):
+            try:
+                _openStoryLink(url)
+                return
+            except OSError:
+                log.error("Outlook First Line Silence: could not open the story link", exc_info=True)
+        return original(self, obj=obj, info=info)
+    _activatePosition.__name__ = getattr(original, "__name__", "_activatePosition")
+    _activatePosition.__doc__ = getattr(original, "__doc__", None)
+    return _activatePosition
 
 
 # Message status in Outlook's message list.
@@ -1672,6 +1883,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
                 manager = cursorManager.CursorManager
                 _patch(manager, name, _makeMoveByLineWrapper(getattr(manager, name), direction))
 
+            # Enter and Space on a story Outlook shows without its link open the link.
+            _patch(
+                owner,
+                "_activatePosition",
+                _makeActivatePositionWrapper(owner._activatePosition),
+            )
+
             if OutlookFirstLineSilenceSettingsPanel not in settingsDialogs.NVDASettingsDialog.categoryClasses:
                 settingsDialogs.NVDASettingsDialog.categoryClasses.append(OutlookFirstLineSilenceSettingsPanel)
 
@@ -1679,7 +1897,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             _gestureHandlerRegistered = True
             updater.start()
             log.info(
-                "Outlook First Line Silence 1.0.24 loaded; links on their own line: %s"
+                "Outlook First Line Silence 1.0.25 loaded; links on their own line: %s"
                 % getLinksOnOwnLine()
             )
         except Exception:
@@ -1699,6 +1917,18 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
     )
     def script_checkForUpdates(self, gesture):
         updater.checkForUpdates()
+
+    @scriptHandler.script(
+        # Translators: Description of a command, shown in the Input Gestures dialog.
+        description=_(
+            "Shows the Outlook message you are reading or have selected as a plain web page, "
+            "where each story is a link"
+        ),
+        category=_("Outlook First Line Silence"),
+        gesture="kb:NVDA+shift+v",
+    )
+    def script_reformatMessage(self, gesture):
+        _reformatMessage()
 
     def event_foreground(self, obj, nextHandler):
         # The message-window title is spoken inside the foreground event chain, before
@@ -1782,6 +2012,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
     def terminate(self):
         updater.stop()
+        _removeReformattedMessages()
         _resetSuggestions()
         global _gestureHandlerRegistered
         _closeGate()

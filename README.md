@@ -8,7 +8,7 @@ announces, "You are now in the message body, type a message." Normal Outlook
 navigation and speech you ask for are left alone.
 
 * Author: Dennis Long; based on Mute Browse Mode 3.6.57 by Josh Kennedy
-* Version: 1.0.24
+* Version: 1.0.25
 * Compatibility: NVDA 2026.1.0 or later (tested with 2026.1.1)
 * Download: grab the `.nvda-addon` file from the
   [releases page](https://github.com/joshknnd1982/outlookFirstLineSilence/releases)
@@ -36,6 +36,14 @@ It also:
   forwarded, has attachment) without restarting NVDA.
 * Recognizes classic Outlook, new Outlook (and Outlook-owned WebView
   content), and the Windows Mail/Calendar-era hosts.
+
+## Badly formatted messages
+
+The add-on opens stories that Outlook shows without their links. Some newsletters put one link around a whole story: its picture, headline, summary and “Read more”. Outlook can’t show a link like that, so the story was plain text, and Enter on its headline did nothing. Now Enter or Space on text in a classic Outlook message finds that text in the message’s own HTML and opens the link the sender put around it in your web browser. Links Outlook does show open as before.
+
+It also reformats a message on request. Press **NVDA+Shift+V** while reading a message, or with a message selected in the message list, and the add-on shows it as a plain web page in your browser: its subject as a heading, then its headings, paragraphs, lists and links, without layout tables, pictures or the sender’s styles. Every line of a story is a link to it. Nothing on the page is loaded from the internet, so opening it doesn’t tell the sender you read the message. The page is a temporary file that is replaced each time and removed when NVDA exits. You can change the gesture in NVDA’s Input Gestures dialog, under Outlook First Line Silence.
+
+Both features read the message through Outlook’s object model. If your antivirus is off or out of date, Outlook may ask whether to allow a program to access its data; that is this add-on asking for the message.
 
 ## Options
 
@@ -66,9 +74,9 @@ Requires Python 3. From the repository root:
 python build.py
 ```
 
-This produces `outlookFirstLineSilence-1.0.24.nvda-addon` and its `.sha256`
+This produces `outlookFirstLineSilence-1.0.25.nvda-addon` and its `.sha256`
 checksum file in the repository root. Upload both to the GitHub release: the
-update check reads the release's tag, such as `v1.0.24`, and checks the
+update check reads the release's tag, such as `v1.0.25`, and checks the
 download against the checksum.
 
 ## Repository layout
@@ -80,12 +88,15 @@ addon/
   globalPlugins/
     outlookFirstLineSilence/
       __init__.py                   The global plugin
+      messageHtml.py                Reads a message's own HTML: story links
+                                    and the reformatted page
       updater.py                    The GitHub update check, shared by all of
                                     joshknnd1982's add-ons; keep it identical
       sounds/                       Recipient-suggestion enter and exit sounds
   doc/
     en/
       readme.html                   User documentation bundled with the add-on
+tests/                              python -m unittest discover -s tests
 build.py                            Builds the .nvda-addon package
 ```
 
