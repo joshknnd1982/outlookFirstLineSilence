@@ -11,8 +11,28 @@ The add-on also preserves Outlook Send/Receive progress announcements while the 
 
 ## Install
 
-1. Download the current `outlookFirstLineSilence-1.0.26.nvda-addon` package.
+1. Download the current `outlookFirstLineSilence-1.0.27.nvda-addon` package.
 2. Open the downloaded file, approve installation in NVDA, and restart NVDA when prompted.
+
+## Keyboard commands
+
+- **NVDA+Shift+X** reformats a badly formatted message. Press it in classic
+  Outlook while reading a message, or with a message selected in the message
+  list. The message opens in your web browser as a plain page: its headings,
+  paragraphs, lists and links, where every line of a story is a link to it.
+  The key only works in Outlook; everywhere else it does what it did before.
+- **Enter** or **Space** on a story's headline, summary or "Read more" in a
+  classic Outlook message opens the story, even when Outlook shows it without
+  a link.
+- **Check for updates** has no key. Use the NVDA menu: **Tools**, **Check for
+  add-on updates**, **Outlook First Line Silence...**.
+
+To change a key or add one, open the NVDA menu, choose **Preferences**, then
+**Input gestures**, and expand **Outlook First Line Silence**. The commands are
+**Reformats the Outlook message you are reading or have selected** and
+**Checks for Outlook First Line Silence updates**. If NVDA+Shift+X does
+something else in Outlook, another add-on uses the same key: give the reformat
+command a different key there.
 
 ## What it changes
 
@@ -48,11 +68,13 @@ To check yourself, open the NVDA menu, choose **Tools**, then **Check for add-on
 
 Version 1.0.25 opens stories that Outlook shows without their links. Some newsletters put one link around a whole story: its picture, headline, summary and “Read more”. Outlook can’t show a link like that, so the story was plain text, and Enter on its headline did nothing. Now Enter or Space on text in a classic Outlook message finds that text in the message’s own HTML and opens the link the sender put around it in your web browser. Links Outlook does show open as before.
 
-It also reformats a message on request. Press **NVDA+Shift+V** while reading a message, or with a message selected in the message list, and the add-on shows it as a plain web page in your browser: its subject as a heading, then its headings, paragraphs, lists and links, without layout tables, pictures or the sender’s styles. Every line of a story is a link to it. Nothing on the page is loaded from the internet, so opening it doesn’t tell the sender you read the message. The page is a temporary file that is replaced each time and removed when NVDA exits. You can change the gesture in NVDA’s Input Gestures dialog, under Outlook First Line Silence.
+It also reformats a message on request. Press **NVDA+Shift+V** (**NVDA+Shift+X** since version 1.0.27) while reading a message, or with a message selected in the message list, and the add-on shows it as a plain web page in your browser: its subject as a heading, then its headings, paragraphs, lists and links, without layout tables, pictures or the sender’s styles. Every line of a story is a link to it. Nothing on the page is loaded from the internet, so opening it doesn’t tell the sender you read the message. The page is a temporary file that is replaced each time and removed when NVDA exits. You can change the gesture in NVDA’s Input Gestures dialog, under Outlook First Line Silence.
 
 Both features read the message through Outlook’s object model. If your antivirus is off or out of date, Outlook may ask whether to allow a program to access its data; that is this add-on asking for the message.
 
 Version 1.0.26 stops “unread” being said twice when you delete a message. As Outlook deletes a message, or moves it out of the folder, it empties the message’s row in the message list before it moves to the next message. NVDA said what was left of the row, just its status, such as “unread”, and then the next message: “unread”, “unread From …”. The add-on now keeps that leftover status quiet, so you hear only the next message. The add-on also no longer looks for Outlook’s Save/Keep-draft prompt in other programs. It did that on every focus change, including in Notepad’s Save As dialog; now it does it only in Outlook.
+
+Version 1.0.27 moves the command that reformats a message to **NVDA+Shift+X**. NVDA+Shift+V, its key in 1.0.25 and 1.0.26, is also used by the Vision Assistant and Say Product Name and Version add-ons, and NVDA doesn't choose between add-ons in a fixed order, so with either one installed NVDA+Shift+V could run the other add-on's command instead. NVDA itself doesn't use NVDA+Shift+X, and the add-on only takes the key in Outlook, so other programs and add-ons keep it. In Input Gestures the command is now called **Reformats the Outlook message you are reading or have selected**, so it can be found by searching for “reformat”, and a new Keyboard commands section lists the add-on's keys.
 
 ## Options and customization
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.26
+# Outlook First Line Silence 1.0.27
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
@@ -1206,10 +1206,15 @@ def _openStoryLink(url):
 
 
 # Reformatting a message on request.
-# NVDA+Shift+V shows the message as a plain web page in the default browser: headings,
+# NVDA+Shift+X shows the message as a plain web page in the default browser: headings,
 # paragraphs, lists and links, without layout tables, pictures or the sender's styles,
 # with every line of a story a link to it. The page is a file in the add-on's own
 # temporary folder, replaced each time and removed when NVDA exits.
+# 1.0.25 used NVDA+Shift+V, which the Vision Assistant and Say Product Name and Version
+# add-ons also use. NVDA asks global plugins for a script in no fixed order, so with
+# either installed the key could go to the other add-on. NVDA 2026.2 itself does not use
+# NVDA+Shift+X (NVDA+X repeats the last speech), and the key is only taken in Outlook.
+_REFORMAT_GESTURE = "kb:NVDA+shift+x"
 _REFORMAT_FOLDER = os.path.join(tempfile.gettempdir(), "outlookFirstLineSilence")
 
 
@@ -1224,6 +1229,15 @@ def _removeReformattedMessages():
                 os.remove(os.path.join(_REFORMAT_FOLDER, name))
             except OSError:
                 pass
+
+
+def _reformatKeyApplies():
+    """Whether the reformat key is Outlook's, not another add-on's: focus is in Outlook."""
+    try:
+        return _isInOutlookWindow(api.getFocusObject())
+    except Exception:
+        log.debugWarning("Outlook First Line Silence: could not tell whether Outlook has focus", exc_info=True)
+        return False
 
 
 def _outlookItemToReformat():
@@ -1949,7 +1963,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             _gestureHandlerRegistered = True
             updater.start()
             log.info(
-                "Outlook First Line Silence 1.0.26 loaded; links on their own line: %s"
+                "Outlook First Line Silence 1.0.27 loaded; links on their own line: %s"
                 % getLinksOnOwnLine()
             )
         except Exception:
@@ -1973,14 +1987,21 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
     @scriptHandler.script(
         # Translators: Description of a command, shown in the Input Gestures dialog.
         description=_(
-            "Shows the Outlook message you are reading or have selected as a plain web page, "
-            "where each story is a link"
+            "Reformats the Outlook message you are reading or have selected: shows it in your "
+            "web browser as a plain page, where each story is a link"
         ),
         category=_("Outlook First Line Silence"),
-        gesture="kb:NVDA+shift+v",
+        gesture=_REFORMAT_GESTURE,
     )
     def script_reformatMessage(self, gesture):
         _reformatMessage()
+
+    def getScript(self, gesture):
+        script = super().getScript(gesture)
+        if getattr(script, "__func__", None) is GlobalPlugin.script_reformatMessage and not _reformatKeyApplies():
+            # Outside Outlook the key is left to NVDA and other add-ons.
+            return None
+        return script
 
     def event_foreground(self, obj, nextHandler):
         # The message-window title is spoken inside the foreground event chain, before

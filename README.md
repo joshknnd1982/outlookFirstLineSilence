@@ -8,10 +8,30 @@ announces, "You are now in the message body, type a message." Normal Outlook
 navigation and speech you ask for are left alone.
 
 * Author: Dennis Long; based on Mute Browse Mode 3.6.57 by Josh Kennedy
-* Version: 1.0.26
+* Version: 1.0.27
 * Compatibility: NVDA 2026.1.0 or later (tested with 2026.1.1)
 * Download: grab the `.nvda-addon` file from the
   [releases page](https://github.com/joshknnd1982/outlookFirstLineSilence/releases)
+
+## Keyboard commands
+
+* **NVDA+Shift+X** reformats a badly formatted message. Press it in classic
+  Outlook while reading a message, or with a message selected in the message
+  list. The message opens in your web browser as a plain page: its headings,
+  paragraphs, lists and links, where every line of a story is a link to it.
+  The key only works in Outlook; everywhere else it does what it did before.
+* **Enter** or **Space** on a story's headline, summary or "Read more" in a
+  classic Outlook message opens the story, even when Outlook shows it without
+  a link.
+* **Check for updates** has no key. Use the NVDA menu: **Tools**, **Check for
+  add-on updates**, **Outlook First Line Silence...**.
+
+To change a key or add one, open the NVDA menu, choose **Preferences**, then
+**Input gestures**, and expand **Outlook First Line Silence**. The commands are
+**Reformats the Outlook message you are reading or have selected** and
+**Checks for Outlook First Line Silence updates**. If NVDA+Shift+X does
+something else in Outlook, another add-on uses the same key: give the reformat
+command a different key there.
 
 ## What it changes
 
@@ -44,7 +64,7 @@ It also:
 
 The add-on opens stories that Outlook shows without their links. Some newsletters put one link around a whole story: its picture, headline, summary and “Read more”. Outlook can’t show a link like that, so the story was plain text, and Enter on its headline did nothing. Now Enter or Space on text in a classic Outlook message finds that text in the message’s own HTML and opens the link the sender put around it in your web browser. Links Outlook does show open as before.
 
-It also reformats a message on request. Press **NVDA+Shift+V** while reading a message, or with a message selected in the message list, and the add-on shows it as a plain web page in your browser: its subject as a heading, then its headings, paragraphs, lists and links, without layout tables, pictures or the sender’s styles. Every line of a story is a link to it. Nothing on the page is loaded from the internet, so opening it doesn’t tell the sender you read the message. The page is a temporary file that is replaced each time and removed when NVDA exits. You can change the gesture in NVDA’s Input Gestures dialog, under Outlook First Line Silence.
+It also reformats a message on request. Press **NVDA+Shift+X** while reading a message, or with a message selected in the message list, and the add-on shows it as a plain web page in your browser: its subject as a heading, then its headings, paragraphs, lists and links, without layout tables, pictures or the sender’s styles. Every line of a story is a link to it. Nothing on the page is loaded from the internet, so opening it doesn’t tell the sender you read the message. The page is a temporary file that is replaced each time and removed when NVDA exits. You can change the gesture in NVDA’s Input Gestures dialog, under Outlook First Line Silence. Up to version 1.0.26 the key was NVDA+Shift+V, which other add-ons also use.
 
 Both features read the message through Outlook’s object model. If your antivirus is off or out of date, Outlook may ask whether to allow a program to access its data; that is this add-on asking for the message.
 
@@ -77,9 +97,9 @@ Requires Python 3. From the repository root:
 python build.py
 ```
 
-This produces `outlookFirstLineSilence-1.0.26.nvda-addon` and its `.sha256`
+This produces `outlookFirstLineSilence-1.0.27.nvda-addon` and its `.sha256`
 checksum file in the repository root. Upload both to the GitHub release: the
-update check reads the release's tag, such as `v1.0.26`, and checks the
+update check reads the release's tag, such as `v1.0.27`, and checks the
 download against the checksum.
 
 ## Repository layout
