@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.29
+# Outlook First Line Silence 1.0.30
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
@@ -113,6 +113,13 @@ _outlookProgressLastEventAt = 0.0
 
 _CONF_SECTION = "outlookFirstLineSilence"
 config.conf.spec.setdefault(_CONF_SECTION, {})["linksOnOwnLine"] = "boolean(default=False)"
+# What is said when focus lands in the body of a message you write: "edit", as JAWS
+# says it, or the sentence the add-on said up to 1.0.29 (issue #7).
+_BODY_SAYS_EDIT = "edit"
+_BODY_SAYS_SENTENCE = "sentence"
+config.conf.spec.setdefault(_CONF_SECTION, {})["bodyAnnouncement"] = (
+    'option("%s", "%s", default="%s")' % (_BODY_SAYS_EDIT, _BODY_SAYS_SENTENCE, _BODY_SAYS_EDIT)
+)
 
 
 def getLinksOnOwnLine():
@@ -124,6 +131,29 @@ def getLinksOnOwnLine():
 
 def setLinksOnOwnLine(enabled):
     config.conf[_CONF_SECTION]["linksOnOwnLine"] = bool(enabled)
+
+
+def getBodyAnnouncement():
+    try:
+        value = config.conf[_CONF_SECTION]["bodyAnnouncement"]
+    except Exception:
+        return _BODY_SAYS_EDIT
+    return value if value in (_BODY_SAYS_EDIT, _BODY_SAYS_SENTENCE) else _BODY_SAYS_EDIT
+
+
+def setBodyAnnouncement(value):
+    config.conf[_CONF_SECTION]["bodyAnnouncement"] = value
+
+
+def _bodyAnnouncementChoices():
+    return (
+        # Translators: A choice for what is said when focus lands in the body of a message
+        # you write, in the add-on's settings panel.
+        (_BODY_SAYS_EDIT, _("Edit, as JAWS says it")),
+        # Translators: A choice for what is said when focus lands in the body of a message
+        # you write, in the add-on's settings panel.
+        (_BODY_SAYS_SENTENCE, _("You are now in the message body, type a message")),
+    )
 
 
 
@@ -390,10 +420,24 @@ def _isOutlookMessageBody(obj):
     return (getattr(obj, "name", "") or "").strip().lower() in _BODY_NAMES
 
 
-def _announceMessageBody():
-    # Translators: Announced when focus reaches the editable message body in Outlook.
+def _messageBodyAnnouncement(nvdaSaidIt):
+    """What to say as focus lands in the body of a message you write, or None."""
+    if getBodyAnnouncement() == _BODY_SAYS_SENTENCE:
+        # Translators: Announced when focus reaches the editable message body in Outlook.
+        return _("You are now in the message body, type a message.")
+    if nvdaSaidIt:
+        # NVDA's own focus speech already said what it is.
+        return None
+    # NVDA's word for an edit field, as in "To edit". JAWS says "edit" (issue #7).
+    return controlTypes.Role.EDITABLETEXT.displayString
+
+
+def _announceMessageBody(nvdaSaidIt):
+    text = _messageBodyAnnouncement(nvdaSaidIt)
+    if not text:
+        return
     with _ownSpeech():
-        ui.message(_("You are now in the message body, type a message."))
+        ui.message(text)
 
 
 # Recipient-suggestion sounds.
@@ -1450,10 +1494,22 @@ class OutlookFirstLineSilenceSettingsPanel(settingsDialogs.SettingsPanel):
         helper = guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
         self.linksOnOwnLine = helper.addItem(wx.CheckBox(self, label=_("Links are on their &own line")))
         self.linksOnOwnLine.SetValue(getLinksOnOwnLine())
+        choices = _bodyAnnouncementChoices()
+        self.bodyAnnouncement = helper.addLabeledControl(
+            # Translators: The label of a choice in the add-on's settings panel.
+            _("When you land in the &body of a message you write, say:"),
+            wx.Choice,
+            choices=[label for value, label in choices],
+        )
+        self.bodyAnnouncement.SetSelection([value for value, label in choices].index(getBodyAnnouncement()))
         self.updates = updater.SettingsControls(self, helper)
 
     def onSave(self):
         setLinksOnOwnLine(self.linksOnOwnLine.GetValue())
+        choices = _bodyAnnouncementChoices()
+        selection = self.bodyAnnouncement.GetSelection()
+        if 0 <= selection < len(choices):
+            setBodyAnnouncement(choices[selection][0])
         self.updates.save()
 
 
@@ -2171,8 +2227,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
                 log.debugWarning("Outlook First Line Silence: could not list open message windows", exc_info=True)
             updater.start()
             log.info(
-                "Outlook First Line Silence 1.0.29 loaded; links on their own line: %s"
-                % getLinksOnOwnLine()
+                "Outlook First Line Silence 1.0.30 loaded; links on their own line: %s; message body: %s"
+                % (getLinksOnOwnLine(), getBodyAnnouncement())
             )
         except Exception:
             if _gestureHandlerRegistered:
@@ -2313,7 +2369,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             if window is not None and window == self._lastBodyWindow:
                 return
             self._lastBodyWindow = window
-            _announceMessageBody()
+            # A message window's body has just had NVDA's focus speech held back, so
+            # nothing has said what it is yet; elsewhere NVDA has said it, role and all.
+            _announceMessageBody(nvdaSaidIt=not _speechIsGated())
         except Exception:
             log.error(
                 "Outlook First Line Silence: could not announce the message body",

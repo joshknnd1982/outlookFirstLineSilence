@@ -258,6 +258,8 @@ State = enum.Enum("State", "READONLY UNAVAILABLE MULTILINE SELECTED INVISIBLE OF
 State.displayString = property(lambda self: {State.MULTILINE: "multi line"}.get(self, self.name.lower()))
 # What the stand-in for NVDA's speakObject says for a role, besides the name.
 ROLE_WORDS = {Role.DIALOG: "dialog", Role.DOCUMENT: "document", Role.EDITABLETEXT: "edit"}
+# As NVDA says each role (controlTypes/role.py).
+Role.displayString = property(lambda self: ROLE_WORDS.get(self, self.name.lower()))
 
 
 class _StubModule(types.ModuleType):

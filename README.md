@@ -3,12 +3,13 @@
 An [NVDA](https://www.nvaccess.org/) screen reader add-on that keeps Outlook
 message opening quiet. When you open an Outlook message, it suppresses the
 automatic inspector title, the dialog/document container announcement, and
-the first line of the message. When focus enters an editable message body, it
-announces, "You are now in the message body, type a message." Normal Outlook
-navigation and speech you ask for are left alone.
+the first line of the message. When focus lands in the body of a message you
+write, it says "edit", as JAWS does, or, if you choose, "You are now in the
+message body, type a message." Normal Outlook navigation and speech you ask
+for are left alone.
 
 * Author: Dennis Long; based on Mute Browse Mode 3.6.57 by Josh Kennedy
-* Version: 1.0.29
+* Version: 1.0.30
 * Compatibility: NVDA 2026.1.0 or later (tested with 2026.1.1)
 * Download: grab the `.nvda-addon` file from the
   [releases page](https://github.com/joshknnd1982/outlookFirstLineSilence/releases)
@@ -51,7 +52,9 @@ A window you write in, such as Forward, Reply or a new message, is not a
 message you read: NVDA says its title, as JAWS does, then the field or
 message body you land in. To, Cc, Bcc and Subject don't say "blank" when
 you land on them empty, or "multi line" just after, as JAWS doesn't; moving
-in an empty field still says "blank".
+in an empty field still says "blank". The message body says "edit", as JAWS
+does, so Reply says its title, then "edit". To hear "You are now in the
+message body, type a message" there instead, see Options.
 
 Pressing a key ends any remaining suppression immediately. Outlook
 Send/Receive progress announcements are preserved throughout.
@@ -87,6 +90,12 @@ each link or similar control in an Outlook message separately, instead of
 reading it as part of the surrounding line. It does not change web browsers
 or other applications.
 
+In the same settings, **When you land in the body of a message you write,
+say** chooses what you hear when focus lands in the body of a Reply, Forward
+or new message: **Edit, as JAWS says it** (the default), or **You are now in
+the message body, type a message**, as up to version 1.0.29. The window's
+title comes first either way.
+
 ## Updates
 
 The add-on checks for updates. Once a day, a little after NVDA starts, the add-on asks its GitHub repository, [github.com/joshknnd1982/outlookFirstLineSilence](https://github.com/joshknnd1982/outlookFirstLineSilence), whether a newer version has been released, and says nothing unless there is one. When there is, a dialog shows what's new in a box you can read line by line, and offers to download and install it. The download must match the release's SHA-256 checksum. Then NVDA asks you to confirm the installation and offers to restart. Your settings are kept.
@@ -108,9 +117,9 @@ Requires Python 3. From the repository root:
 python build.py
 ```
 
-This produces `outlookFirstLineSilence-1.0.29.nvda-addon` and its `.sha256`
+This produces `outlookFirstLineSilence-1.0.30.nvda-addon` and its `.sha256`
 checksum file in the repository root. Upload both to the GitHub release: the
-update check reads the release's tag, such as `v1.0.29`, and checks the
+update check reads the release's tag, such as `v1.0.30`, and checks the
 download against the checksum.
 
 ## Repository layout

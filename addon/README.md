@@ -1,6 +1,6 @@
 # Outlook First Line Silence
 
-An NVDA add-on that keeps Outlook message opening quiet. When you open an Outlook message, it suppresses the automatic inspector title, dialog/document container announcement, and initial line of the message. When focus enters an editable message body, it announces, “You are now in the message body, type a message.” It leaves normal Outlook navigation and user-requested speech alone.
+An NVDA add-on that keeps Outlook message opening quiet. When you open an Outlook message, it suppresses the automatic inspector title, dialog/document container announcement, and initial line of the message. When focus lands in the body of a message you write, it says “edit”, as JAWS does, or, if you choose, “You are now in the message body, type a message.” It leaves normal Outlook navigation and user-requested speech alone.
 
 The add-on also preserves Outlook Send/Receive progress announcements while the message-opening speech is being suppressed.
 
@@ -11,7 +11,7 @@ The add-on also preserves Outlook Send/Receive progress announcements while the 
 
 ## Install
 
-1. Download the current `outlookFirstLineSilence-1.0.29.nvda-addon` package.
+1. Download the current `outlookFirstLineSilence-1.0.30.nvda-addon` package.
 2. Open the downloaded file, approve installation in NVDA, and restart NVDA when prompted.
 
 ## Keyboard commands
@@ -44,7 +44,7 @@ When an Outlook message inspector opens, the add-on briefly blocks only NVDA's a
 
 Coming back to a message window that is already open, with Alt+Tab, the taskbar, or when a window in front of it closes, is not opening it: NVDA says the window's title, as JAWS does, but still not the container announcement or the first line.
 
-A window you write in, such as Forward, Reply or a new message, is not a message you read: NVDA says its title, as JAWS does, then the field or message body you land in. To, Cc, Bcc and Subject don't say “blank” when you land on them empty, or “multi line” just after, as JAWS doesn't; moving in an empty field still says “blank”.
+A window you write in, such as Forward, Reply or a new message, is not a message you read: NVDA says its title, as JAWS does, then the field or message body you land in. To, Cc, Bcc and Subject don't say “blank” when you land on them empty, or “multi line” just after, as JAWS doesn't; moving in an empty field still says “blank”. The message body says “edit”, as JAWS does, so Reply says its title, then “edit”. To hear “You are now in the message body, type a message” there instead, see Options and customization.
 
 Pressing a key ends any short remaining suppression window immediately. Reading commands, navigation, and other normal Outlook speech are not intended to be muted.
 
@@ -84,11 +84,15 @@ Version 1.0.28 says the whole title of a message window when you come back to it
 
 Version 1.0.29 says the title of a message window you write in, as JAWS does. With 1.0.28, Control+F on a message said only “To edit blank”, then “multi line”, because the add-on kept the Forward window's title quiet, as it does when you open a message to read it. JAWS says the title, then “To Edit”. Whether a message window is one you read or one you write in is only known when focus lands in it, so the add-on keeps the title it dropped and says it, before the field, when focus lands in an address field or a message body you can type in. Forward, Reply, Reply All and New now say their window's title, then the field or message body. Opening a message you read is still quiet. To, Cc, Bcc and Subject no longer say “blank” when you land on them empty, or the “multi line” NVDA said as Outlook made an address field multi-line just after it got focus; moving in an empty field still says “blank”.
 
+Version 1.0.30 says “edit” when you land in the body of a message you write, as JAWS does. With 1.0.29, Reply said its window's title, then “You are now in the message body, type a message.” JAWS says the title, then “edit”. The sentence is now a choice in the add-on's settings: **When you land in the body of a message you write, say** is **Edit, as JAWS says it** unless you choose **You are now in the message body, type a message**. The window's title comes first either way. Where NVDA says the body itself, such as a plain-text message's body, it already says “edit”, so the add-on doesn't say it again.
+
 ## Options and customization
 
 Open NVDA's Settings, select **Outlook First Line Silence**, and enable **Links are on their own line**. It affects Outlook message reading only. With the option enabled, Up and Down Arrow stop on each link/control separately instead of reading it as part of the surrounding line. It does not change browser layout or other applications.
 
 If NVDA's Browse Mode setting **Use screen layout (when supported)** is off, NVDA already separates controls into their own lines globally, so this option has no additional effect in Outlook's web-rendered messages.
+
+In the same settings, **When you land in the body of a message you write, say** chooses what you hear when focus lands in the body of a Reply, Forward or new message: **Edit, as JAWS says it** (the default), or **You are now in the message body, type a message**, as up to version 1.0.29. The window's title comes first either way.
 
 For developers, the two timing constants at the top of `globalPlugins/outlookFirstLineSilence/__init__.py` control the internal, short-lived suppression gate:
 

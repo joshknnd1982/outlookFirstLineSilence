@@ -1,4 +1,4 @@
-"""Tests for the title of a message window you write in (issue #7, 1.0.29).
+"""Tests for the title of a message window you write in (issue #7, 1.0.29 and 1.0.30).
 
 python -m unittest discover -s tests
 
@@ -9,6 +9,10 @@ Now Forward, Reply and New say their title once focus lands where you write. Ope
 message you read stays silent. To, Cc, Bcc and Subject leave out NVDA's "blank" and
 the "multi line" NVDA says when Outlook makes an address field multi-line just after it
 gets focus.
+
+For Reply, JAWS says the title, then "edit". 1.0.29 said the title, then "You are now
+in the message body, type a message." Since 1.0.30 the body says "edit" too, and the
+sentence is a choice in the add-on's settings.
 
 The plugin runs through NVDA 2026.2's own event code, from test_messageReturn.
 """
@@ -42,6 +46,9 @@ class _ComposeWindow:
         self.cc = NVDAObject(Role.EDITABLETEXT, "Cc", **field)
         self.subject = NVDAObject(Role.EDITABLETEXT, "Subject", text=subject, **field)
         self.body = NVDAObject(Role.DOCUMENT, "", self.dialog, window=window + 2, windowClass="_WwG")
+        # A plain-text message's body, as Mute Browse Mode 3.6.57 recognizes it.
+        self.plainBody = NVDAObject(Role.EDITABLETEXT, "Message", self.dialog, window=window + 3, windowClass="RichEdit20W")
+        self.plainBody.windowControlID = 8224
 
 
 class ComposeTitleTests(harness.MessageWindowTestCase):
@@ -49,12 +56,26 @@ class ComposeTitleTests(harness.MessageWindowTestCase):
         super().setUp()
         sys.modules["ui"].message = self.spoken.append
 
+    def chooseBodyAnnouncement(self, value):
+        """Choose what the body says in the add-on's settings."""
+        conf = sys.modules["config"].conf
+        conf["outlookFirstLineSilence"] = {"bodyAnnouncement": value}
+        self.addCleanup(conf.pop, "outlookFirstLineSilence", None)
+
     def composeWindow(self, window, title, subject=""):
         self.visible.add(window)
         self.classes[window] = "rctrl_renwnd32"
         self.titles[window] = title + " "
-        self.roots.update({window + 1: window, window + 2: window})
+        self.roots.update({window + 1: window, window + 2: window, window + 3: window})
         return _ComposeWindow(self.NVDAObject, self.desktop, window, title, subject)
+
+    def reply(self, body="body"):
+        """Control+R on an open message: Outlook opens the Reply window with focus in the body."""
+        self.readOpenMessage()
+        self.later()
+        reply = self.composeWindow(0x700, REPLY_TITLE)
+        self.focus(getattr(reply, body), reply.pane)
+        return reply
 
     def readOpenMessage(self):
         """The tester's first step: Enter on a message in the list."""
@@ -102,11 +123,74 @@ class ComposeTitleTests(harness.MessageWindowTestCase):
         # The title only once, and Subject says its text.
         self.assertEqual(self.spoken, ["Cc edit", "Subject edit " + FORWARD_SUBJECT])
 
-    def test_replySaysItsTitleThenTheBody(self):
-        self.readOpenMessage()
+    def test_replySaysItsTitleThenEdit(self):
+        # What JAWS says in the tester's second comment on issue #7.
+        self.reply()
+        self.assertEqual(self.heardInFull(), [REPLY_TITLE + " ", "edit"])
+
+    def test_replyCanSayTheSentenceInstead(self):
+        self.chooseBodyAnnouncement("sentence")
+        self.reply()
+        self.assertEqual(self.heardInFull(), [REPLY_TITLE + " ", BODY])
+
+    def test_tabbingIntoTheBodySaysEdit(self):
+        self.focus(self.inboxRow, self.inbox)
         self.later()
-        reply = self.composeWindow(0x700, REPLY_TITLE)
-        self.focus(reply.body, reply.pane)
+        new = self.composeWindow(0x800, NEW_TITLE)
+        self.focus(new.to, new.pane)
+        self.later(1.0)
+        self.focus(new.subject, new.pane)
+        del self.spoken[:]
+        self.later(0.5)
+        self.focus(new.body, new.pane)
+        self.assertEqual(self.spoken, ["edit"])
+
+    def test_tabbingIntoTheBodyCanSayTheSentence(self):
+        self.chooseBodyAnnouncement("sentence")
+        self.focus(self.inboxRow, self.inbox)
+        self.later()
+        new = self.composeWindow(0x800, NEW_TITLE)
+        self.focus(new.to, new.pane)
+        self.later(1.0)
+        del self.spoken[:]
+        self.focus(new.body, new.pane)
+        self.assertEqual(self.spoken, [BODY])
+
+    def test_aBodyNvdaSaysItselfGetsNoSecondEdit(self):
+        # NVDA's focus speech for a plain-text body is not held back, and already says "edit".
+        self.reply("plainBody")
+        self.assertEqual(self.heardInFull(), [REPLY_TITLE + " ", "Message edit blank"])
+
+    def test_aBodyNvdaSaysItselfCanStillSayTheSentence(self):
+        self.chooseBodyAnnouncement("sentence")
+        self.reply("plainBody")
+        self.assertEqual(self.heardInFull(), [REPLY_TITLE + " ", "Message edit blank", BODY])
+
+    def test_anUnknownSettingSaysEdit(self):
+        self.chooseBodyAnnouncement("something else")
+        self.reply()
+        self.assertEqual(self.heardInFull(), [REPLY_TITLE + " ", "edit"])
+
+    def test_theSettingsPanelChoosesWhatTheBodySays(self):
+        panel = object.__new__(plugin().OutlookFirstLineSilenceSettingsPanel)
+        with harness.mock.patch.object(plugin().updater, "SettingsControls"):
+            panel.makeSettings(harness.mock.MagicMock(name="settingsSizer"))
+        helper = sys.modules["gui.guiHelper"].BoxSizerHelper.return_value
+        helper.addLabeledControl.assert_called_once_with(
+            "When you land in the &body of a message you write, say:",
+            sys.modules["wx"].Choice,
+            choices=["Edit, as JAWS says it", "You are now in the message body, type a message"],
+        )
+        # Edit is chosen until you choose otherwise.
+        panel.bodyAnnouncement.SetSelection.assert_called_once_with(0)
+        panel.bodyAnnouncement.GetSelection.return_value = 1
+        panel.linksOnOwnLine.GetValue.return_value = False
+        conf = sys.modules["config"].conf
+        conf["outlookFirstLineSilence"] = {}
+        self.addCleanup(conf.pop, "outlookFirstLineSilence", None)
+        panel.onSave()
+        self.assertEqual(conf["outlookFirstLineSilence"]["bodyAnnouncement"], "sentence")
+        self.reply()
         self.assertEqual(self.heardInFull(), [REPLY_TITLE + " ", BODY])
 
     def test_aNewMessageSaysItsTitle(self):
