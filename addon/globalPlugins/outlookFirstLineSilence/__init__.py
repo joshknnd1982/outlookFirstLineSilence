@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.27
+# Outlook First Line Silence 1.0.28
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
@@ -78,6 +78,11 @@ _gateUntil = 0.0
 _patches = []
 _gestureHandlerRegistered = False
 _messageOpeningUntil = 0.0
+# Message windows that are open, by top-level window handle, with the time each one
+# first came to the front. A message that opens stays silent; coming back to one that
+# is already open, such as with Alt+Tab, says its title as JAWS does (issue #5).
+_openMessageWindows = {}
+_messageReturnTitlePending = False
 _savePromptKey = None
 _savePromptUntil = 0.0
 
@@ -1519,14 +1524,81 @@ def _isOutlookMessageInspector(obj):
             candidates.append((winUser.getWindowText(root) or "").strip())
         except Exception:
             pass
-    return any(" - Message (" in name for name in candidates if name)
+    return any(_isMessageWindowTitle(name) for name in candidates if name)
+
+
+def _isMessageWindowTitle(text):
+    return " - Message (" in (text or "")
+
+
+# A message window counts as opening for this long after it first comes to the front,
+# which is also how long its opening speech is dropped.
+_MESSAGE_OPENING_SECONDS = 2.0
+_OUTLOOK_MESSAGE_WINDOW_CLASS = "rctrl_renwnd32"
+
+
+def _noteOpenMessageWindows():
+    """Count message windows that are already open when the add-on starts as open.
+
+    Otherwise the first time one came to the front after NVDA started, as in the
+    issue #5 log, would count as opening it, and its title would be dropped.
+    """
+    for window in _enumerateVisibleTopLevelWindows():
+        try:
+            if winUser.getClassName(window) != _OUTLOOK_MESSAGE_WINDOW_CLASS:
+                continue
+            if _isMessageWindowTitle(winUser.getWindowText(window)):
+                _openMessageWindows.setdefault(window, float("-inf"))
+        except Exception:
+            continue
+
+
+def _forgetClosedMessageWindows():
+    """Forget message windows that are gone, or hidden for Outlook to reuse.
+
+    This runs on every foreground change. A closed message window is destroyed or
+    hidden before the window after it comes to the front, so reopening a message
+    counts as opening it even if Outlook shows it in the same window.
+    """
+    for window in list(_openMessageWindows):
+        try:
+            visible = bool(_user32().IsWindowVisible(window))
+        except Exception:
+            visible = False
+        if not visible:
+            del _openMessageWindows[window]
 
 
 def _armMessageOpening(obj):
-    global _messageOpeningUntil
-    if _isOutlookMessageInspector(obj):
-        _messageOpeningUntil = time.monotonic() + 2.0
+    global _messageOpeningUntil, _messageReturnTitlePending
+    _forgetClosedMessageWindows()
+    if not _isOutlookMessageInspector(obj):
+        return
+    now = time.monotonic()
+    _messageOpeningUntil = now + _MESSAGE_OPENING_SECONDS
+    window = _rootWindowOf(obj)
+    firstSeen = _openMessageWindows.setdefault(window, now) if window else now
+    # Coming back to an open message drops the same container, document and first-line
+    # speech as opening one, except its title.
+    _messageReturnTitlePending = now - firstSeen >= _MESSAGE_OPENING_SECONDS
+    if _messageReturnTitlePending:
+        log.debug("Outlook First Line Silence: back in an open message window; only its title is spoken")
+    else:
         log.debug("Outlook First Line Silence: armed message-inspector entry suppression")
+
+
+def _takeReturnTitle(obj):
+    """True, once, for the title of a message window you came back to (issue #5)."""
+    global _messageReturnTitlePending
+    if not _messageReturnTitlePending:
+        return False
+    if getattr(obj, "role", None) == getattr(controlTypes.Role, "DOCUMENT", None):
+        return False
+    if not _isMessageWindowTitle(getattr(obj, "name", "")):
+        return False
+    _messageReturnTitlePending = False
+    log.debug("Outlook First Line Silence: saying the title of an open message window")
+    return True
 
 
 def _messageOpeningNow():
@@ -1725,7 +1797,9 @@ def _shouldDropOpeningObjectSpeech(args, kwargs):
         # the message inspector's title/document sequence instead.
         if obj.role == getattr(controlTypes.Role, "DIALOG", None):
             return False
-        return obj.role in _TITLE_ROLES
+        if obj.role not in _TITLE_ROLES:
+            return False
+        return not _takeReturnTitle(obj)
     except Exception:
         return False
 
@@ -1961,9 +2035,13 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
             inputCore.decide_executeGesture.register(_onGesture)
             _gestureHandlerRegistered = True
+            try:
+                _noteOpenMessageWindows()
+            except Exception:
+                log.debugWarning("Outlook First Line Silence: could not list open message windows", exc_info=True)
             updater.start()
             log.info(
-                "Outlook First Line Silence 1.0.27 loaded; links on their own line: %s"
+                "Outlook First Line Silence 1.0.28 loaded; links on their own line: %s"
                 % getLinksOnOwnLine()
             )
         except Exception:
@@ -2006,7 +2084,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
     def event_foreground(self, obj, nextHandler):
         # The message-window title is spoken inside the foreground event chain, before
         # Word browse mode and its focus hooks exist. Arm the 3.6.57 speakObject filter
-        # before allowing NVDA to continue that chain.
+        # before allowing NVDA to continue that chain. NVDA's own event_foreground then
+        # cancels speech, cutting off the title the Alt+Tab switcher was saying, so a
+        # message window you come back to keeps its title (issue #5).
         try:
             _armMessageOpening(obj)
         except Exception:
@@ -2100,8 +2180,10 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
         updater.stop()
         _removeReformattedMessages()
         _resetSuggestions()
-        global _gestureHandlerRegistered
+        global _gestureHandlerRegistered, _messageReturnTitlePending
         _closeGate()
+        _openMessageWindows.clear()
+        _messageReturnTitlePending = False
         if _gestureHandlerRegistered:
             try:
                 inputCore.decide_executeGesture.unregister(_onGesture)

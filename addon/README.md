@@ -11,7 +11,7 @@ The add-on also preserves Outlook Send/Receive progress announcements while the 
 
 ## Install
 
-1. Download the current `outlookFirstLineSilence-1.0.27.nvda-addon` package.
+1. Download the current `outlookFirstLineSilence-1.0.28.nvda-addon` package.
 2. Open the downloaded file, approve installation in NVDA, and restart NVDA when prompted.
 
 ## Keyboard commands
@@ -41,6 +41,8 @@ When an Outlook message inspector opens, the add-on briefly blocks only NVDA's a
 - The message-window title.
 - The dialog or document container announcement.
 - The first line NVDA would otherwise announce automatically.
+
+Coming back to a message window that is already open, with Alt+Tab, the taskbar, or when a window in front of it closes, is not opening it: NVDA says the window's title, as JAWS does, but still not the container announcement or the first line.
 
 Pressing a key ends any short remaining suppression window immediately. Reading commands, navigation, and other normal Outlook speech are not intended to be muted.
 
@@ -75,6 +77,8 @@ Both features read the message through Outlook’s object model. If your antivir
 Version 1.0.26 stops “unread” being said twice when you delete a message. As Outlook deletes a message, or moves it out of the folder, it empties the message’s row in the message list before it moves to the next message. NVDA said what was left of the row, just its status, such as “unread”, and then the next message: “unread”, “unread From …”. The add-on now keeps that leftover status quiet, so you hear only the next message. The add-on also no longer looks for Outlook’s Save/Keep-draft prompt in other programs. It did that on every focus change, including in Notepad’s Save As dialog; now it does it only in Outlook.
 
 Version 1.0.27 moves the command that reformats a message to **NVDA+Shift+X**. NVDA+Shift+V, its key in 1.0.25 and 1.0.26, is also used by the Vision Assistant and Say Product Name and Version add-ons, and NVDA doesn't choose between add-ons in a fixed order, so with either one installed NVDA+Shift+V could run the other add-on's command instead. NVDA itself doesn't use NVDA+Shift+X, and the add-on only takes the key in Outlook, so other programs and add-ons keep it. In Input Gestures the command is now called **Reformats the Outlook message you are reading or have selected**, so it can be found by searching for “reformat”, and a new Keyboard commands section lists the add-on's keys.
+
+Version 1.0.28 says the whole title of a message window when you come back to it, as JAWS does. With 1.0.27, Alt+Tab back into an open message said only the start of its title. The Alt+Tab list began to say it, NVDA stopped speaking as the message came to the front, and then the add-on kept the message window's own title quiet, because it treated every arrival in a message window as opening the message. The add-on now remembers which message windows are open. Opening a message is still quiet. Coming back to one that is already open, with Alt+Tab, the taskbar, or when a reply or dialog in front of it closes, says its title, but still not “dialog”, “document” or the first line. Messages that were already open when NVDA started count as open.
 
 ## Options and customization
 
