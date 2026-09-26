@@ -8,7 +8,7 @@ announces, "You are now in the message body, type a message." Normal Outlook
 navigation and speech you ask for are left alone.
 
 * Author: Dennis Long; based on Mute Browse Mode 3.6.57 by Josh Kennedy
-* Version: 1.0.28
+* Version: 1.0.29
 * Compatibility: NVDA 2026.1.0 or later (tested with 2026.1.1)
 * Download: grab the `.nvda-addon` file from the
   [releases page](https://github.com/joshknnd1982/outlookFirstLineSilence/releases)
@@ -46,6 +46,12 @@ Coming back to a message window that is already open, with Alt+Tab, the
 taskbar, or when a window in front of it closes, is not opening it: NVDA says
 the window's title, as JAWS does, but still not the container announcement or
 the first line.
+
+A window you write in, such as Forward, Reply or a new message, is not a
+message you read: NVDA says its title, as JAWS does, then the field or
+message body you land in. To, Cc, Bcc and Subject don't say "blank" when
+you land on them empty, or "multi line" just after, as JAWS doesn't; moving
+in an empty field still says "blank".
 
 Pressing a key ends any remaining suppression immediately. Outlook
 Send/Receive progress announcements are preserved throughout.
@@ -102,9 +108,9 @@ Requires Python 3. From the repository root:
 python build.py
 ```
 
-This produces `outlookFirstLineSilence-1.0.28.nvda-addon` and its `.sha256`
+This produces `outlookFirstLineSilence-1.0.29.nvda-addon` and its `.sha256`
 checksum file in the repository root. Upload both to the GitHub release: the
-update check reads the release's tag, such as `v1.0.28`, and checks the
+update check reads the release's tag, such as `v1.0.29`, and checks the
 download against the checksum.
 
 ## Repository layout

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Outlook First Line Silence 1.0.28
+# Outlook First Line Silence 1.0.29
 # Extracted from the verified document-entry behavior of Mute Browse Mode 3.6.57.
 # Maintained by Dennis Long <dennisl@fastmail.com>.
 # Licensed under the GNU General Public License version 2.
@@ -83,6 +83,10 @@ _messageOpeningUntil = 0.0
 # is already open, such as with Alt+Tab, says its title as JAWS does (issue #5).
 _openMessageWindows = {}
 _messageReturnTitlePending = False
+# The title of the message window that is opening, dropped with the rest of its opening
+# speech, as (window, say). A Forward, Reply or new message window says it once focus
+# lands where you write, as JAWS does; a message you read stays silent (issue #7).
+_openingTitle = None
 _savePromptKey = None
 _savePromptUntil = 0.0
 
@@ -1570,8 +1574,10 @@ def _forgetClosedMessageWindows():
 
 
 def _armMessageOpening(obj):
-    global _messageOpeningUntil, _messageReturnTitlePending
+    global _messageOpeningUntil, _messageReturnTitlePending, _openingTitle
     _forgetClosedMessageWindows()
+    if _openingTitle is not None and _openingTitle[0] != _rootWindowOf(obj):
+        _openingTitle = None
     if not _isOutlookMessageInspector(obj):
         return
     now = time.monotonic()
@@ -1603,6 +1609,101 @@ def _takeReturnTitle(obj):
 
 def _messageOpeningNow():
     return time.monotonic() < _messageOpeningUntil
+
+
+# Writing a message (issue #7).
+# Forward, Reply, Reply All and New open a message window too, and the add-on dropped
+# its title with the rest of the opening speech, so Forward said only "To edit blank",
+# then "multi line". JAWS says the title, then "To Edit". Whether the window is one you
+# read or one you write is not known until focus lands in it: a message you write gets
+# focus in an address field or an editable body, a message you read in its read-only body.
+_HEADER_FIELD_WINDOW_CLASS = "RichEdit20W"
+
+
+def _noteOpeningTitle(obj, say):
+    global _openingTitle
+    window = _rootWindowOf(obj)
+    if window:
+        _openingTitle = (window, say)
+
+
+def _isWhereYouWrite(obj):
+    """True for a field or message body you can type in."""
+    if getattr(obj, "role", None) == controlTypes.Role.EDITABLETEXT:
+        try:
+            states = set(obj.states or ())
+        except Exception:
+            return False
+        return not (_hasState(states, _STATE_READONLY) or _hasState(states, _STATE_UNAVAILABLE))
+    return _isOutlookMessageBody(obj)
+
+
+def _takeOpeningTitle(obj):
+    """How to say the title of the opening message window *obj* is in, once, if you write in it."""
+    global _openingTitle
+    if _openingTitle is None:
+        return None
+    window, say = _openingTitle
+    if not _messageOpeningNow():
+        _openingTitle = None
+        return None
+    if _rootWindowOf(obj) != window:
+        return None
+    if _isWhereYouWrite(obj):
+        _openingTitle = None
+        return say
+    if getattr(obj, "role", None) == getattr(controlTypes.Role, "DOCUMENT", None):
+        # A message you read: its title stays quiet.
+        _openingTitle = None
+    return None
+
+
+def _sayOpeningTitle(obj):
+    say = _takeOpeningTitle(obj)
+    if say is None:
+        return
+    log.debug("Outlook First Line Silence: saying the title of a message window you write in")
+    with _ownSpeech():
+        say()
+
+
+def _isMessageHeaderField(obj):
+    """True for To, Cc, Bcc or Subject in a classic Outlook message window."""
+    if getattr(obj, "role", None) != controlTypes.Role.EDITABLETEXT:
+        return False
+    # The same fields NVDA's Outlook support makes a ContactEditField.
+    if not _windowClassOf(obj).startswith(_HEADER_FIELD_WINDOW_CLASS):
+        return False
+    return _isOutlookMessageInspector(obj) and not _isOutlookMessageBody(obj)
+
+
+def _nvdaLabel(text):
+    """*text* as NVDA says it; this module's _ is the add-on's."""
+    translate = getattr(builtins, "_", None)
+    return translate(text) if callable(translate) else text
+
+
+def _sequenceOf(args, kwargs):
+    sequence = args[0] if args else kwargs.get("speechSequence")
+    return sequence if isinstance(sequence, list) else None
+
+
+def _isLoneStateSpeech(args, kwargs, state):
+    """True for an utterance that is only *state*'s label, as NVDA says a new state."""
+    label = getattr(state, "displayString", None)
+    sequence = _sequenceOf(args, kwargs)
+    if not label or sequence is None:
+        return False
+    words = [item.strip().casefold() for item in sequence if isinstance(item, str) and item.strip()]
+    return words == [label.casefold()]
+
+
+def _withoutBlank(sequence):
+    """NVDA's focus speech for a field, without "blank" when it is empty; JAWS says only "To Edit"."""
+    if not isinstance(sequence, list):
+        return sequence
+    blank = _nvdaLabel("blank").strip().casefold()
+    return [item for item in sequence if not (isinstance(item, str) and item.strip().casefold() == blank)]
 
 
 def _isBareDialogSpeech(args):
@@ -1723,24 +1824,46 @@ def _outlookDraftPromptText(obj):
 
 
 @contextmanager
-def _muteSpeech():
-    """Let NVDA handle an event and note what it would say, without saying it."""
+def _changedSpeech(change):
+    """Let NVDA handle an event, saying what *change* makes of each utterance.
+
+    *change* gets the speech sequence and returns the one to say; nothing is said
+    for an empty one or None.
+    """
     speechModule = getattr(speech, "speech", None)
     public = getattr(speech, "speak", None)
     private = getattr(speechModule, "speak", None) if speechModule else None
-    def quiet(*args, **kwargs):
-        return None
+
+    def changing(original):
+        def speak(*args, **kwargs):
+            if args:
+                sequence, args = args[0], args[1:]
+            else:
+                sequence = kwargs.pop("speechSequence", None)
+            sequence = change(sequence)
+            if not sequence:
+                return None
+            return original(sequence, *args, **kwargs)
+        return speak
+
+    publicSpeak = changing(public) if public is not None else None
+    privateSpeak = changing(private) if speechModule is not None and private is not None else None
     try:
-        if public is not None:
-            speech.speak = quiet
-        if speechModule is not None and private is not None:
-            speechModule.speak = quiet
+        if publicSpeak is not None:
+            speech.speak = publicSpeak
+        if privateSpeak is not None:
+            speechModule.speak = privateSpeak
         yield
     finally:
-        if public is not None and getattr(speech, "speak", None) is quiet:
+        if publicSpeak is not None and getattr(speech, "speak", None) is publicSpeak:
             speech.speak = public
-        if speechModule is not None and private is not None and getattr(speechModule, "speak", None) is quiet:
+        if privateSpeak is not None and getattr(speechModule, "speak", None) is privateSpeak:
             speechModule.speak = private
+
+
+def _muteSpeech():
+    """Let NVDA handle an event and note what it would say, without saying it."""
+    return _changedSpeech(lambda sequence: None)
 
 
 def _handleOutlookDraftPrompt(obj, nextHandler):
@@ -1818,6 +1941,8 @@ def _makeSpeakObjectWrapper(original):
                 role,
                 name,
             )
+            if role != getattr(controlTypes.Role, "DOCUMENT", None) and _isMessageWindowTitle(name):
+                _noteOpeningTitle(obj, lambda: original(*args, **kwargs))
             return
         return original(*args, **kwargs)
 
@@ -1932,6 +2057,11 @@ def _makeSpeakWrapper(original):
         if _messageOpeningNow() and _isBareDialogSpeech(args):
             log.debug("Outlook First Line Silence: suppressed opening dialog speech")
             return
+        # Just after focus reaches To, Cc or Bcc, Outlook makes the field multi-line, and
+        # NVDA says that new state on its own (issue #7). JAWS says nothing.
+        if _isLoneStateSpeech(args, kwargs, _STATE_MULTILINE) and _isMessageHeaderField(api.getFocusObject()):
+            log.debug("Outlook First Line Silence: 'multi line' not said for an address field")
+            return
         if _speechIsGated():
             log.debug("Outlook First Line Silence: suppressed document-entry speech")
             return
@@ -2041,7 +2171,7 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
                 log.debugWarning("Outlook First Line Silence: could not list open message windows", exc_info=True)
             updater.start()
             log.info(
-                "Outlook First Line Silence 1.0.28 loaded; links on their own line: %s"
+                "Outlook First Line Silence 1.0.29 loaded; links on their own line: %s"
                 % getLinksOnOwnLine()
             )
         except Exception:
@@ -2138,6 +2268,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             _renewOutlookObjectModel(obj)
         except Exception:
             log.debugWarning("Outlook First Line Silence: could not check Outlook's object model", exc_info=True)
+        # Before NVDA says the field, as JAWS says the window's title first (issue #7).
+        try:
+            _sayOpeningTitle(obj)
+        except Exception:
+            log.debugWarning("Outlook First Line Silence: could not say the message window's title", exc_info=True)
         try:
             isMessageDocument = (
                 getattr(obj, "role", None) == getattr(controlTypes.Role, "DOCUMENT", None)
@@ -2156,7 +2291,16 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
             return
         if _handleOutlookDraftPrompt(obj, nextHandler):
             return
-        nextHandler()
+        try:
+            isHeaderField = _isMessageHeaderField(obj)
+        except Exception:
+            isHeaderField = False
+            log.debugWarning("Outlook First Line Silence: could not check for an address field", exc_info=True)
+        if isHeaderField:
+            with _changedSpeech(_withoutBlank):
+                nextHandler()
+        else:
+            nextHandler()
         self._reportMessageBody(obj)
 
     def _reportMessageBody(self, obj):
@@ -2180,10 +2324,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
         updater.stop()
         _removeReformattedMessages()
         _resetSuggestions()
-        global _gestureHandlerRegistered, _messageReturnTitlePending
+        global _gestureHandlerRegistered, _messageReturnTitlePending, _openingTitle
         _closeGate()
         _openMessageWindows.clear()
         _messageReturnTitlePending = False
+        _openingTitle = None
         if _gestureHandlerRegistered:
             try:
                 inputCore.decide_executeGesture.unregister(_onGesture)

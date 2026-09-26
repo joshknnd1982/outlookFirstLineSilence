@@ -211,6 +211,24 @@ def event_gainFocus(self):
 	brailleInput.handler.handleGainFocus(self)
 	vision.handler.handleGainFocus(self)'''
 
+EVENT_STATE_CHANGE = r'''
+def event_stateChange(self):
+	# Automatically announce state changes for certain objects.
+	inFocus = (
+		# this is the current focus:
+		# E.g. announcing the checked state of a checkbox
+		self is api.getFocusObject()
+		# this is a focus ancestor:
+		# Including the ancestors supports scenarios such as
+		# when pressing a focused button changes the state of an ancestor container,
+		# E.g. a button inside a column header that changes the sorting state of the column (#10890)
+		or any(self is obj for obj in api.getFocusAncestors())
+	)
+	if inFocus:
+		speech.speakObjectProperties(self, states=True, reason=controlTypes.OutputReason.CHANGE)
+	braille.handler.handleUpdate(self)
+	vision.handler.handleUpdate(self, property="states")'''
+
 EVENT_FOREGROUND = r'''
 def event_foreground(self):
 	"""Called when the foreground window changes.
@@ -236,6 +254,8 @@ Role = enum.Enum(
 )
 OutputReason = enum.Enum("OutputReason", "FOCUS FOCUSENTERED CHANGE CARET QUERY")
 State = enum.Enum("State", "READONLY UNAVAILABLE MULTILINE SELECTED INVISIBLE OFFSCREEN")
+# As NVDA says each state (controlTypes/state.py).
+State.displayString = property(lambda self: {State.MULTILINE: "multi line"}.get(self, self.name.lower()))
 # What the stand-in for NVDA's speakObject says for a role, besides the name.
 ROLE_WORDS = {Role.DIALOG: "dialog", Role.DOCUMENT: "document", Role.EDITABLETEXT: "edit"}
 
@@ -315,14 +335,19 @@ def tearDownModule():
 
 def _nvdaObjectClass(namespace):
 	methods = {}
-	for code in (REPORT_FOCUS, EVENT_FOCUS_ENTERED, EVENT_GAIN_FOCUS, EVENT_FOREGROUND):
+	for code in (REPORT_FOCUS, EVENT_FOCUS_ENTERED, EVENT_GAIN_FOCUS, EVENT_STATE_CHANGE, EVENT_FOREGROUND):
 		local = {}
 		exec(code.strip(), namespace, local)
 		methods.update(local)
 
-	def __init__(self, role, name="", parent=None, appName="outlook", window=0, presentable=True, states=()):
+	def __init__(
+		self, role, name="", parent=None, appName="outlook", window=0, presentable=True, states=(),
+		windowClass="", text="",
+	):
 		self.role = role
 		self.name = name
+		self.windowClassName = windowClass
+		self.text = text
 		self.parent = parent
 		self.appModule = types.SimpleNamespace(appName=appName)
 		self.windowHandle = window
@@ -411,13 +436,17 @@ class _MessageWindow:
 		self.document = NVDAObject(Role.DOCUMENT, "", self.dialog, window=window, states=(State.READONLY,))
 
 
-class MessageReturnTests(unittest.TestCase):
+class MessageWindowTestCase(unittest.TestCase):
+	"""NVDA's focus events, with the add-on as its only global plugin, and Outlook's windows."""
+
 	def setUp(self):
 		self.spoken = []
 		self.clock = _Clock()
 		self.visible = set()
 		self.classes = {}
 		self.titles = {}
+		# The top-level window of each child window.
+		self.roots = {}
 
 		nvda = {
 			"typing": __import__("typing"),
@@ -450,7 +479,7 @@ class MessageReturnTests(unittest.TestCase):
 		api.setForegroundObject = self.api.setForegroundObject
 
 		winUser = sys.modules["winUser"]
-		winUser.getAncestor = lambda window, flags: window
+		winUser.getAncestor = lambda window, flags: self.roots.get(window, window)
 		winUser.getClassName = lambda window: self.classes.get(window, "")
 		winUser.getWindowText = lambda window: self.titles.get(window, "")
 		winUser.getWindowThreadProcessID = lambda window: (0, 0)
@@ -462,16 +491,28 @@ class MessageReturnTests(unittest.TestCase):
 		))
 
 		def speakObject(obj, reason=None, _prefixSpeechCommand=None, priority=None):
-			# A stand-in for NVDA's speakObject: the name, then words for some roles.
+			# A stand-in for NVDA's speakObject: the name, then words for some roles, then
+			# on focus a field's text, or "blank" when it has none.
 			sequence = [obj.name] if obj.name else []
 			if obj.role in ROLE_WORDS:
 				sequence.append(ROLE_WORDS[obj.role])
+			if obj.role == Role.EDITABLETEXT and reason == OutputReason.FOCUS:
+				sequence.append(obj.text or "blank")
+			obj.spokenStates = set(obj.states)
 			sys.modules["speech.speech"].speak(sequence)
+
+		def speakObjectProperties(obj, reason=None, states=False, **properties):
+			# A stand-in for NVDA's speakObjectProperties: on a change, the new states.
+			newStates = set(obj.states) - getattr(obj, "spokenStates", set())
+			obj.spokenStates = set(obj.states)
+			if states and newStates:
+				sys.modules["speech.speech"].speak([state.displayString for state in sorted(newStates, key=str)])
 
 		wrappedSpeakObject = plugin._makeSpeakObjectWrapper(speakObject)
 		for module in (speechPackage, speechModule):
 			module.speak = speak
 			module.speakObject = wrappedSpeakObject
+			module.speakObjectProperties = speakObjectProperties
 			module.cancelSpeech = lambda: self.spoken.append(CANCEL)
 		speechPackage.manager = types.SimpleNamespace(_shouldCancelExpiredFocusEvents=lambda: False)
 		nvda["api"] = api
@@ -493,6 +534,7 @@ class MessageReturnTests(unittest.TestCase):
 			mock.patch.object(plugin, "_openMessageWindows", {}),
 			mock.patch.object(plugin, "_messageOpeningUntil", 0.0),
 			mock.patch.object(plugin, "_messageReturnTitlePending", False),
+			mock.patch.object(plugin, "_openingTitle", None),
 			mock.patch.object(plugin, "_gateUntil", 0.0),
 			mock.patch.object(plugin, "_inCallDepth", 0),
 		)
@@ -555,8 +597,9 @@ class MessageReturnTests(unittest.TestCase):
 			return list(self.spoken)
 		return self.spoken[len(self.spoken) - self.spoken[::-1].index(CANCEL):]
 
-	# Tests.
 
+
+class MessageReturnTests(MessageWindowTestCase):
 	def test_altTabBackToAnOpenMessageSaysItsWholeTitle(self):
 		message = self.messageWindow(0x400)
 		self.openMessage(message)
@@ -605,7 +648,7 @@ class MessageReturnTests(unittest.TestCase):
 		self.assertNotIn(message.window, plugin._openMessageWindows)
 
 	def test_comingBackFromAnotherMessageSaysTheTitle(self):
-		# Reply opens a second window; sending it brings the first one back.
+		# A second message opens in its own window; closing it brings the first one back.
 		first = self.messageWindow(0x400)
 		reply = self.messageWindow(0x500, OTHER_TITLE)
 		self.openMessage(first)
